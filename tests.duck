@@ -1,2 +1,2 @@
 # cjson tests
-test tests/ -i ../micron/tests -i ../micron -i ../micron/src
+test tests/ -i include/micron/tests -i include/micron -i include/micron/src

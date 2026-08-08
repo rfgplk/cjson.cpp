@@ -1,11 +1,11 @@
 # cjson benches
 # measurement builds: append  --perf --fp --no-ssp --no-lto  per line when profiling
 # comparison benches (yyjson/simdjson) are scripts/vsbuild targets, not duck targets
-build benches/parse_bench.cpp -i ../micron -i ../micron/src
-build benches/pipeline_bench.cpp -i ../micron -i ../micron/src
-build benches/number_bench.cpp -i ../micron -i ../micron/src
-build benches/minify_bench.cpp -i ../micron -i ../micron/src
-build benches/utf8_bench.cpp -i ../micron -i ../micron/src
-build benches/write_bench.cpp -i ../micron -i ../micron/src
-build benches/corpus_bench.cpp -i ../micron -i ../micron/src
-build benches/fp_bench.cpp -i ../micron -i ../micron/src
+build benches/parse_bench.cpp -i include/micron -i include/micron/src
+build benches/pipeline_bench.cpp -i include/micron -i include/micron/src
+build benches/number_bench.cpp -i include/micron -i include/micron/src
+build benches/minify_bench.cpp -i include/micron -i include/micron/src
+build benches/utf8_bench.cpp -i include/micron -i include/micron/src
+build benches/write_bench.cpp -i include/micron -i include/micron/src
+build benches/corpus_bench.cpp -i include/micron -i include/micron/src
+build benches/fp_bench.cpp -i include/micron -i include/micron/src

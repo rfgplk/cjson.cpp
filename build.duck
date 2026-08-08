@@ -1,5 +1,5 @@
 # cjson build batchfile
 #   duck batch build.duck              serial
 #   duck batch parallel build.duck     concurrent
-build tests/freestanding_gate.cpp -k -i ../micron -i ../micron/src
-build tools/generate_samples.cpp -i ../micron -i ../micron/src
+build tests/freestanding_gate.cpp -k -i include/micron -i include/micron/src
+build tools/generate_samples.cpp -i include/micron -i include/micron/src
