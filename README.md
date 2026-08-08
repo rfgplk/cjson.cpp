@@ -23,10 +23,12 @@ validation, minification, serialization, and writing**, a **lazy functional laye
 ------
 
 > [!WARNING]
-> cjson is **micron-only**; there is no support for the STL or glibc.
+> cjson is built with the  **micron** core library; there is no support for the traditional C++ Standard Library or (g)libc.
 
 #### Features
-
+  - header-only
+  - clean and simple API
+  - fully **RFC 8259** compliant
   - **two-stage SIMD engine**: 64-byte blocks to structural indexes / quote/escape masks
     / UTF-8 validation in one sweep, then a scalar FSM building a contiguous 16-byte
     value arena. amd64 (SSSE3/AVX2+PCLMUL), aarch64 (NEON), armv7 (NEON), and a SWAR
@@ -34,9 +36,11 @@ validation, minification, serialization, and writing**, a **lazy functional laye
   - **native comptime mode**: `cjson::ct::parse<S>()` runs during compiletime and produces a
     document into two flat rodata arrays; validate, minify and serialize are `consteval` too
   - **on-demand reads**
+  - **minification, prettification, and serilization**
   - **a lazy functional layer**: `fmap`/`filter`/`fold`/`take`/`flat_map`,
     curried for OCaml-style `|` pipes
   - **one-shot helpers**: `cjson::get<i64>(text, "/a/b")`
+  - **simple `any` overloads** for simple development: `cjson::get(text, "/a/b") -> micron::any<...>`
   - header-only, freestanding-capable, depends only on the *micron* core library
 
 ------
@@ -54,6 +58,7 @@ auto v = cjson::iterate(body, sc);
 auto root = v.cast<cjson::view>().root();
 i64 exp = root["exp"].i64_or(0);
 auto sub = root["sub"].str_raw();
+auto add = root["add"]; // yields a micron::any type
 
 // owning document
 auto r = cjson::parse(body);
@@ -148,6 +153,7 @@ All entry points live in `namespace cjson`. Types are *micron* types.
 namespace cjson {
 
 // types
+using pun    = micron::any<bool, u64, i64, f64, micron::string, const cjson::value *>;
 using bytes  = micron::raw_slice<const u8>;    // borrowed input view
 using wbytes = micron::raw_slice<u8>;          // buffer
 using strv   = micron::raw_slice<const char>;  // strings out of getters ({.ptr,.len})

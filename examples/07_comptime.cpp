@@ -3,7 +3,6 @@
 //
 // See also:
 //   examples/01_quickstart.cpp — the runtime API
-//   ARCHITECTURE.md            — "The constexpr contract"
 
 #include "_ex_common.hpp"
 
