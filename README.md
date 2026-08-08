@@ -31,12 +31,12 @@ validation, minification, serialization, and writing**, a **lazy functional laye
   - fully **RFC 8259** compliant
   - **two-stage SIMD engine**: 64-byte blocks to structural indexes / quote/escape masks
     / UTF-8 validation in one sweep, then a scalar FSM building a contiguous 16-byte
-    value arena. amd64 (SSSE3/AVX2+PCLMUL), aarch64 (NEON), armv7 (NEON), and a SWAR
-    floor
+    value arena
+  - full simd support for amd64 (SSSE3/AVX2+PCLMUL), aarch64 (NEON), armv7 (NEON), and a SWAR floor
   - **native comptime mode**: `cjson::ct::parse<S>()` runs during compiletime and produces a
     document into two flat rodata arrays; validate, minify and serialize are `consteval` too
   - **on-demand reads**
-  - **minification, prettification, and serilization**
+  - **minification, prettification, and serialization**
   - **a lazy functional layer**: `fmap`/`filter`/`fold`/`take`/`flat_map`,
     curried for OCaml-style `|` pipes
   - **one-shot helpers**: `cjson::get<i64>(text, "/a/b")`
