@@ -357,13 +357,22 @@ CJSON_DEPTH_LIMIT     // nesting cap; default 1024, 0 folds the counter away ent
 
 Header-only. *micron* core headers must be reachable as `<micron/...>`; requires C++26 (GCC 16+).
 
-```
-duck batch build.duck        # tools et al
-duck batch tests.duck        # snowball suites (exit 1 == pass per binary)
-duck batch examples.duck     # eight examples
-scripts/ctbuild              # comptime stress tier (raised constexpr limits)
+An easy to use script has been provided to fetch micron, run `cd include/ && bash fetch_micron.sh` to clone micron locally, then run any of the prebaked build_.*.sh scripts.
 
-duck batch benches.duck                  # benches
+```
+./build_benches.sh
+./build_examples.sh
+
+# if you want to use duck (build tool, you need to compile it via tools/src/main.cc in micron)
+
+duck batch parallel build.duck        # tools et al
+duck batch parallel tests.duck        # snowball suites (exit 1 == pass per binary)
+duck batch parallel examples.duck     # eight examples
+scripts/ctbuild                       # comptime stress tier (raised constexpr limits)
+
+# to run benchmarks
+duck batch paralle benches.duck          # benches
+or ./build_benches.sh 
 scripts/fetch_corpus                     # wide-net corpus into sample/web/
 scripts/vsbuild benches/corpus_vs.cpp    # head-to-head against six libraries
 taskset -c 0 ./bin/corpus_vs > benches/results/corpus_vs.txt
