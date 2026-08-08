@@ -106,8 +106,10 @@ fast paths (SIMD kernels, `__builtin_memcpy` puns, abcmalloc arenas) sit behind
   <source media="(prefers-color-scheme: dark)" srcset="benches/charts/op-extract-dom.gbpsf.png">
   <img alt="cjson corpus benchmark -- extract-dom (GB/s)" src="benches/charts/op-extract-dom.gbpsf.png">
 </picture>
-
-
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="op-serialize.gbps.dark.png">
+  <img alt="cjson corpus benchmark -- serialize (GB/s)" src="benches/charts/op-serialize.gbps.dark.png">
+</picture>
 
 Full DOM parse throughput, **GB/s, higher is better**. AMD Ryzen 7 3700U, kernel 7.1.5,
 GCC 16.1.1, `taskset -c 0`, medians of 7. Every contender parses the same bytes in copy
