@@ -1,7 +1,7 @@
 <img align="left" width="300" src="https://github.com/user-attachments/assets/a176bdfa-d6b2-47dc-a5d2-408026abb14f" alt="cjson_logo"/>
 
 
-### *cjson* 🧊
+### *cjson* 🧙‍♂️
 
 #### the fastest header-only C++26 JSON parsing library
 
@@ -27,8 +27,8 @@ validation, minification, serialization, and writing**, a **lazy functional laye
 
 #### Features
 
-  - **two-stage SIMD engine**: 64-byte blocks to structural indexes + quote/escape masks
-    + UTF-8 validation in one sweep, then a scalar FSM building a contiguous 16-byte
+  - **two-stage SIMD engine**: 64-byte blocks to structural indexes / quote/escape masks
+    / UTF-8 validation in one sweep, then a scalar FSM building a contiguous 16-byte
     value arena. amd64 (SSSE3/AVX2+PCLMUL), aarch64 (NEON), armv7 (NEON), and a SWAR
     floor
   - **native comptime mode**: `cjson::ct::parse<S>()` runs during compiletime and produces a
@@ -82,12 +82,7 @@ static_assert(k_tree.root()["port"].i64_or(0) == 8080);
 
 Every function on the parse/validate/minify/write path is `constexpr`. Machine-specific
 fast paths (SIMD kernels, `__builtin_memcpy` puns, abcmalloc arenas) sit behind
-`if !consteval` with portable twins producing **identical results** — identical bytes on
-the write side, and identical accept/reject decisions, structural index arrays and value
-bit patterns on the read side. Comptime scratch is transient `new[]`. `goto` is illegal
-in constant evaluation, so every FSM is loop/switch shaped.
-
-`tests/comptime.cpp` enforces the seam and `scripts/ctbuild` proves the stress tier.
+`if !consteval` with portable twins producing **identical results**. Comptime scratch is transient `new[]`. 
 
 ##### Benchmarks
 
