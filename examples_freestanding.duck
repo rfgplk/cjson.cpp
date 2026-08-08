@@ -1,0 +1,12 @@
+# cjson examples
+#   duck batch examples.duck            serial
+#   duck batch parallel examples.duck   concurrent
+# each example is a standalone micron-only tu; run them from the repo root
+build examples/01_quickstart.cpp -i include/micron -i include/micron/src -ke
+build examples/02_dom.cpp -i include/micron -i include/micron/src -ke
+build examples/03_ondemand.cpp -i include/micron -i include/micron/src -ke
+build examples/04_functional.cpp -i include/micron -i include/micron/src -ke
+build examples/05_oneshot.cpp -i include/micron -i include/micron/src -ke
+build examples/06_build_write.cpp -i include/micron -i include/micron/src -ke
+build examples/07_comptime.cpp -i include/micron -i include/micron/src -ke
+build examples/08_strings.cpp -i include/micron -i include/micron/src -ke
