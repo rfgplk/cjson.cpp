@@ -1,0 +1,61 @@
+#!/bin/sh
+# Microarchitectural perf-stat sweep over one cjson hot region.
+#
+#   scripts/uarch <region> [corpus]
+#   scripts/uarch all                      # every region, twitter
+#
+# region  s1 poolcopy build validate wmin wpretty msweep
+# corpus  64kb 128KB twitter 1MB 5MB large               (default: twitter)
+#
+# Runs bin/uarch_probe once per event group. Because the probe executes exactly the
+# selected region (setup is one-shot, the measured lambda runs thousands of reps),
+# whole-process counters land on that region.
+#
+# Groups are capped at 5 events ON PURPOSE. Zen+ has 6 core PMCs and nmi_watchdog
+# eats one, so a 6th event re-introduces the multiplex scaling that makes
+# scripts/perfscan's 9-event block only ~13.5% enabled. If you disabled the watchdog
+# (echo 0 > /proc/sys/kernel/nmi_watchdog) you may raise these to 6.
+#
+# perf_event_paranoid=2 on this box => every event needs the :u suffix.
+set -e
+cd "$(dirname "$0")/.."
+
+REGION="${1:-all}"
+CORPUS="${2:-twitter}"
+BIN=bin/uarch_probe
+
+[ -x "$BIN" ] || { echo "uarch: $BIN missing — duck build benches/uarch_probe.cpp -i ../micron -i ../micron/src --perf --fp --no-ssp --no-lto -f"; exit 1; }
+
+# A  issue-side: is this frontend- or backend-bound at all?
+# B  frontend detail: decoder starvation, icache back-pressure, op-cache thrash
+# C  memory-side: load/store dispatch counts (spill traffic), L1d and dTLB misses
+# D  dispatch token stalls (which resource runs out) + retired mispredicts
+GA='cycles:u,instructions:u,stalled-cycles-frontend:u,stalled-cycles-backend:u,branch-misses:u'
+GB='cycles:u,ic_fetch_stall.ic_stall_dq_empty:u,ic_fetch_stall.ic_stall_back_pressure:u,ic_fetch_stall.ic_stall_any:u,ic_oc_mode_switch.ic_oc_mode_switch:u'
+GC='cycles:u,ls_dispatch.ld_dispatch:u,ls_dispatch.store_dispatch:u,L1-dcache-load-misses:u,dTLB-load-misses:u'
+GD='cycles:u,de_dis_dispatch_token_stalls0.alu_token_stall:u,de_dis_dispatch_token_stalls0.agsq_token_stall:u,de_dis_dispatch_token_stalls0.retire_token_stall:u,ex_ret_brn_misp:u'
+
+echo "## uarch  region=$REGION  corpus=$CORPUS  $(date +%F)"
+echo "## host: $(lscpu | sed -n 's/^Model name: *//p' | head -1)  kernel $(uname -r)"
+echo "## nmi_watchdog=$(cat /proc/sys/kernel/nmi_watchdog 2>/dev/null)  governor=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null)"
+echo ""
+
+echo "## in-process bbench counters (4 events, unmultiplexed — the decision metric)"
+taskset -c 0 "./$BIN" "$REGION" "$CORPUS"
+echo ""
+
+for g in A B C D; do
+  case $g in
+    A) EV=$GA; WHAT="issue-side: frontend vs backend bound" ;;
+    B) EV=$GB; WHAT="frontend detail: dq_empty / back_pressure / op-cache switches" ;;
+    C) EV=$GC; WHAT="memory-side: ld+st dispatch, L1d + dTLB misses" ;;
+    D) EV=$GD; WHAT="dispatch token stalls + retired mispredicts" ;;
+  esac
+  echo "## group $g — $WHAT"
+  # a group whose events this kernel/PMU cannot resolve is reported, not fatal
+  if ! taskset -c 0 perf stat -e "$EV" -- "./$BIN" "$REGION" "$CORPUS" 2>&1 >/dev/null \
+       | sed -n '/Performance counter/,$p'; then
+    echo "   (group $g unavailable on this PMU)"
+  fi
+  echo ""
+done

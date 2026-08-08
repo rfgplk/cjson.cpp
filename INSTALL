@@ -1,0 +1,17 @@
+cjson is header-only.
+
+System install (headers -> /usr/include/cjson, so <cjson/cjson.hpp> resolves):
+
+    sudo scripts/install_local.py
+
+In-tree use: the headers live under src/cjson/; duck's default include path (-i ./src)
+makes <cjson/cjson.hpp> resolve from the repo root, or point your compiler at src/.
+
+Requirements: g++ >= 14 (cjson uses -std=c++26 and `if consteval`), the micron core
+library (installed at /usr/include/micron or as a sibling ../micron dev tree). No libc,
+no STL, no other dependencies.
+
+Tests/benches additionally want: the micron dev tree as a sibling (../micron, for
+snowball + bbench), and for the comparison benches: the installed yyjson
+(/usr/lib64/libyyjson.so) plus the simdjson reference checkout at ../../Git/simdjson
+(scripts/vsbuild amalgamates it on demand into comparison/.simdjson-build/).

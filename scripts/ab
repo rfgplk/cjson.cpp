@@ -1,0 +1,164 @@
+#!/usr/bin/env python3
+# Interleaved A/B bench runner: working tree (A) vs the HEAD worktree (B).
+#
+#   scripts/ab <bench> [rounds] [--copy] [-- <binary args...>]
+#
+# <bench> is a benches/ TU stem (parse_bench) or path (benches/parse_bench.cpp).
+# Builds the bench in each tree as-is; a TU absent at HEAD is copied from A (it must
+# stick to HEAD-era APIs), and --copy force-copies A's TU over B's even when B has one
+# (keeps row filters/argv handling identical both sides — still HEAD-era APIs only).
+# Alternates A/B run order per round to cancel thermal/frequency drift, and reports
+# per-(op, impl, size) medians of cyc/op, ins/op (= cyc/op x IPC) and IPC, with
+# deltas. Decision metric per house discipline: ins/op medians, never single-run
+# cycles. Args after -- are passed to the bench binary on both sides.
+import subprocess
+import sys
+import os
+import re
+import shutil
+import statistics
+
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+HEAD = os.path.abspath(os.path.join(ROOT, "..", "cjson-head"))
+BUILD = "duck build {tu} -i ../micron -i ../micron/src --perf --fp --no-ssp --no-lto -f"
+
+
+def run(cmd, cwd):
+    r = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True)
+    if r.returncode != 0:
+        sys.stderr.write(r.stdout + r.stderr)
+        raise SystemExit(f"ab: command failed in {cwd}: {cmd}")
+    return r.stdout
+
+
+def parse_rows(out):
+    # Three column layouts are live, and all of them must parse or the whole table comes
+    # back empty (that is not a loud failure — it prints a correct-looking header over no
+    # rows, which is exactly how it hid until the baseline worktree was moved forward):
+    #   8 fields  size op impl GB/s cyc/op ins/op IPC bmiss%   (current)
+    #   7 fields  size op impl cyc/op ins/op IPC bmiss%        (3ae96f0+, ins/op measured)
+    #   6 fields  size op impl cyc/op IPC bmiss%               (legacy, ins/op derived)
+    # plus the pre-fix glue where a wide cyc/op runs into the impl column with no
+    # separating space: "cjson-scalar2143677.16"
+    glued = re.compile(r"^(.*?[A-Za-z_])([0-9]+\.[0-9]+)$")
+    rows = {}
+    for ln in out.splitlines():
+        f = ln.split()
+        if len(f) in (5, 6, 7) and len(f) > 2:
+            m = glued.match(f[2])
+            if m:
+                f = [f[0], f[1], m.group(1), m.group(2)] + f[3:]
+        if len(f) not in (6, 7, 8):
+            continue
+        try:
+            size = int(f[0])
+            if len(f) == 8:
+                # GB/s is f[3]; cyc/op remains the A/B currency because it does not
+                # move with clock, so it stays the comparison key
+                cyc, ins, ipc, bm = float(f[4]), float(f[5]), float(f[6]), float(f[7])
+            elif len(f) == 7:
+                cyc, ins, ipc, bm = float(f[3]), float(f[4]), float(f[5]), float(f[6])
+            else:
+                cyc, ipc, bm = float(f[3]), float(f[4]), float(f[5])
+                ins = cyc * ipc
+        except ValueError:
+            continue
+        rows[(f[1], f[2], size)] = (cyc, ins, ipc, bm)
+    return rows
+
+
+def median(xs):
+    return statistics.median(xs) if xs else float("nan")
+
+
+def main():
+    argv = sys.argv[1:]
+    binargs = []
+    if "--" in argv:
+        cut = argv.index("--")
+        binargs = argv[cut + 1 :]
+        argv = argv[:cut]
+    copy_tu = "--copy" in argv
+    argv = [a for a in argv if a != "--copy"]
+    if not argv:
+        raise SystemExit("usage: scripts/ab <bench> [rounds] [--copy] [-- <binary args...>]")
+    stem = os.path.basename(argv[0])
+    stem = stem[:-4] if stem.endswith(".cpp") else stem
+    tu = f"benches/{stem}.cpp"
+    rounds = int(argv[1]) if len(argv) > 1 else 7
+
+    if not os.path.isdir(HEAD):
+        raise SystemExit(f"ab: HEAD worktree missing at {HEAD} (git worktree add ../cjson-head HEAD)")
+
+    sides = {"A": ROOT, "B": HEAD}
+    ok = {"A": False, "B": False}
+    for name, cwd in sides.items():
+        tup = os.path.join(cwd, tu)
+        if name == "B" and (copy_tu or not os.path.isfile(tup)) and os.path.isfile(os.path.join(ROOT, tu)):
+            # copied TUs are untracked in the worktree, never committed, and must
+            # stick to HEAD-era APIs to compile there
+            shutil.copy(os.path.join(ROOT, tu), tup)
+            shutil.copy(os.path.join(ROOT, "benches/_bench_common.hpp"), os.path.join(cwd, "benches/_bench_common.hpp"))
+            print(f"ab: copied {tu} (+_bench_common.hpp) into B")
+        if not os.path.isfile(tup):
+            print(f"ab: {tu} absent in {name} ({cwd}) -- skipping that side")
+            continue
+        print(f"ab: building {tu} in {name} ...", flush=True)
+        try:
+            run(BUILD.format(tu=tu), cwd)
+            ok[name] = True
+        except SystemExit:
+            if name == "B":
+                print("ab: B-side build failed (new-API TU?) -- reporting A only")
+            else:
+                raise
+    if not ok["A"]:
+        raise SystemExit("ab: A-side build failed")
+
+    data = {"A": {}, "B": {}}  # side -> key -> [(cyc, ipc, bm)]
+    for r in range(rounds):
+        order = ["A", "B"] if r % 2 == 0 else ["B", "A"]
+        for name in order:
+            binp = os.path.join(sides[name], "bin", stem)
+            if not ok[name] or not os.path.isfile(binp):
+                continue
+            extra = (" " + " ".join(binargs)) if binargs else ""
+            out = run(f"taskset -c 0 ./bin/{stem}{extra}", sides[name])
+            for k, v in parse_rows(out).items():
+                data[name].setdefault(k, []).append(v)
+        print(f"ab: round {r + 1}/{rounds} done", flush=True)
+
+    keys = sorted(set(data["A"]) | set(data["B"]))
+    hdr = f"{'op':<28} {'impl':<18} {'size':>9} | {'cyc A':>12} {'cyc B':>12} {'dC%':>7} | {'ins A':>12} {'ins B':>12} {'dI%':>7} | {'IPC A':>5} {'IPC B':>5} | {'bmA%':>5} {'bmB%':>5}"
+    print()
+    print(hdr)
+    print("-" * len(hdr))
+    for k in keys:
+        op, impl, size = k
+        a, b = data["A"].get(k), data["B"].get(k)
+        if a and b:
+            ca = median([x[0] for x in a])
+            cb = median([x[0] for x in b])
+            ia = median([x[1] for x in a])
+            ib = median([x[1] for x in b])
+            pa = median([x[2] for x in a])
+            pb = median([x[2] for x in b])
+            ba = median([x[3] for x in a])
+            bb = median([x[3] for x in b])
+            dc = 100.0 * (ca - cb) / cb if cb else 0.0
+            di = 100.0 * (ia - ib) / ib if ib else 0.0
+            print(
+                f"{op:<28} {impl:<18} {size:>9} | {ca:>12.0f} {cb:>12.0f} {dc:>+7.2f} | {ia:>12.0f} {ib:>12.0f} {di:>+7.2f} | {pa:>5.2f} {pb:>5.2f} | {ba:>5.2f} {bb:>5.2f}"
+            )
+        else:
+            side = "A-only" if a else "B-only"
+            s = a or b
+            ca = median([x[0] for x in s])
+            ia = median([x[1] for x in s])
+            print(f"{op:<28} {impl:<18} {size:>9} | {ca:>12.0f} {'-':>12} {side:>7} | {ia:>12.0f} {'-':>12} {'':>7} |")
+    print()
+    print("ab: A = working tree, B = HEAD worktree. negative dC%/dI% = A is faster/leaner.")
+
+
+if __name__ == "__main__":
+    main()

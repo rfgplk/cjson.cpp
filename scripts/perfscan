@@ -1,0 +1,22 @@
+#!/bin/sh
+# perf-stat + hotspot sweep for one bench binary (user-space events only;
+# perf_event_paranoid=2 on this box permits them).
+#
+#   scripts/perfscan bin/<bench> [args...]
+#
+# Note: 9 stat events > 6 Zen+ PMCs => perf multiplexes and scales; numbers are for
+# ranking pressure sources, exact ins/op comes from the bench's own bbench counters.
+set -e
+BIN="$1"
+shift || true
+EV=cycles:u,instructions:u,branches:u,branch-misses:u,cache-references:u,cache-misses:u,L1-dcache-load-misses:u,dTLB-load-misses:u,page-faults
+
+echo "## perf stat ($BIN $*)"
+taskset -c 0 perf stat -e "$EV" -- "$BIN" "$@" 2>&1 >/dev/null | sed -n '/Performance counter/,$p'
+
+D=$(mktemp -d)
+trap 'rm -rf "$D"' EXIT
+taskset -c 0 perf record -q -g --call-graph fp -F 997 -o "$D/perf.data" -- "$BIN" "$@" >/dev/null 2>&1
+echo ""
+echo "## hotspots (flat self%, --call-graph fp, -F 997)"
+perf report --stdio --no-children --percent-limit 1 --sort symbol -i "$D/perf.data" 2>/dev/null | grep -vE '^#|^$|^\s*\|' | head -40

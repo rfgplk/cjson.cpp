@@ -1,0 +1,118 @@
+#!/bin/sh
+# Build the comparison benches (benches/*_vs.cpp) against the reference json libraries.
+#
+# Anything that needs compiling or amalgamating is built on demand from the checkouts
+# under ~/Git into cjson-local (gitignored) build dirs — the reference trees themselves
+# stay untouched. Header-only libraries installed system-wide (nlohmann, rapidjson,
+# boost.json) are used in place.
+#
+# EVERY contender goes behind an extern "C" shim in comparison/. For simdjson, rapidjson
+# and glaze that is mandatory: micron reimplements the x86 intrinsics, so micron headers
+# and <immintrin.h>-world code cannot share a tu. nlohmann and boost.json do not strictly
+# need it and get one anyway, so the bench tu speaks one abi to all of them.
+#
+# NOTE: this box ships uutils coreutils, where `cp -u` SILENTLY SKIPS copies GNU cp
+# would make. Every staleness check below is an explicit [ -nt ] / [ -f ] test.
+set -e
+cd "$(dirname "$0")/.."
+
+src="${1:-benches/parse_vs.cpp}"
+base=$(basename "$src" | sed 's/\.[^.]*$//')
+
+SJ_SRC=../../Git/simdjson
+SJ_BUILD=comparison/.simdjson-build
+YY_SRC=../../Git/yyjson
+YY_BUILD=comparison/.yyjson-build
+GLZ_SRC=../../Git/glaze
+GLZ_VENDOR=comparison/.glaze-vendor
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# yyjson
+
+if [ ! -f "$YY_BUILD/libyyjson.a" ]; then
+  echo "vsbuild: building yyjson into $YY_BUILD ..."
+  mkdir -p "$YY_BUILD"
+  cp "$YY_SRC/src/yyjson.h" "$YY_BUILD/"
+  /usr/bin/gcc -O3 -march=native -c "$YY_SRC/src/yyjson.c" -o "$YY_BUILD/yyjson.o"
+  ar rcs "$YY_BUILD/libyyjson.a" "$YY_BUILD/yyjson.o"
+fi
+mkdir -p libs
+if [ ! -f libs/libyyjson.a ] || [ "$YY_BUILD/libyyjson.a" -nt libs/libyyjson.a ]; then
+  cp "$YY_BUILD/libyyjson.a" libs/
+fi
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# simdjson
+
+if [ ! -f "$SJ_BUILD/simdjson.cpp" ]; then
+  echo "vsbuild: amalgamating simdjson into $SJ_BUILD ..."
+  mkdir -p "$SJ_BUILD"
+  (cd "$SJ_SRC/singleheader" \
+     && AMALGAMATE_SOURCE_PATH=../src AMALGAMATE_INCLUDE_PATH=../include \
+        AMALGAMATE_OUTPUT_PATH="$OLDPWD/$SJ_BUILD" python3 amalgamate.py >/dev/null)
+fi
+
+if [ ! -f "$SJ_BUILD/simdjson.o" ]; then
+  echo "vsbuild: compiling simdjson.o ..."
+  /usr/bin/g++ -std=c++20 -O3 -march=native -I"$SJ_BUILD" -c "$SJ_BUILD/simdjson.cpp" -o "$SJ_BUILD/simdjson.o"
+fi
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# glaze — vendored (no distro package), pinned to the checkout's current commit
+
+if [ ! -d "$GLZ_VENDOR/glaze" ]; then
+  echo "vsbuild: vendoring glaze into $GLZ_VENDOR ..."
+  mkdir -p "$GLZ_VENDOR"
+  # -r, not -R: uutils cp (what this box ships) does not accept the uppercase form
+  cp -r "$GLZ_SRC/include/glaze" "$GLZ_VENDOR/"
+  {
+    echo "glaze vendored from $GLZ_SRC"
+    echo "commit: $(cd "$GLZ_SRC" && git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+    echo "note:   regenerate by removing this directory and re-running scripts/vsbuild"
+  } > "$GLZ_VENDOR/VENDOR.txt"
+fi
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# shims — one object per contender, each compiled WITHOUT any micron include path
+#
+# shim <name> <source> <std> <extra flags...>
+shim() {
+  _name=$1; _srcf=$2; _std=$3
+  shift 3
+  _obj="$SJ_BUILD/$_name.o"
+  if [ ! -f "$_obj" ] || [ "$_srcf" -nt "$_obj" ]; then
+    echo "vsbuild: compiling $_name.o ..."
+    /usr/bin/g++ "-std=$_std" -O3 -march=native "$@" -c "$_srcf" -o "$_obj"
+  fi
+}
+
+mkdir -p "$SJ_BUILD"
+shim simdjson_shim  comparison/simdjson_shim.cpp  c++20 -I"$SJ_BUILD"
+shim nlohmann_shim  comparison/nlohmann_shim.cpp  c++23
+shim rapidjson_shim comparison/rapidjson_shim.cpp c++23
+shim boostjson_shim comparison/boostjson_shim.cpp c++23
+shim glaze_shim     comparison/glaze_shim.cpp     c++23 -I"$GLZ_VENDOR"
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# selective linking
+#
+# vsbuild used to link yyjson + both simdjson objects into every vs tu unconditionally.
+# With six contenders that would drag boost and glaze into benches that never call them,
+# so each tu declares what it needs by name.
+
+case "$base" in
+  corpus_vs)
+    OBJS="$SJ_BUILD/simdjson.o $SJ_BUILD/simdjson_shim.o $SJ_BUILD/nlohmann_shim.o $SJ_BUILD/rapidjson_shim.o $SJ_BUILD/boostjson_shim.o $SJ_BUILD/glaze_shim.o $YY_BUILD/libyyjson.a"
+    LIBS="-lboost_json -lboost_container"
+    ;;
+  *)
+    OBJS="$SJ_BUILD/simdjson.o $SJ_BUILD/simdjson_shim.o $YY_BUILD/libyyjson.a"
+    LIBS=""
+    ;;
+esac
+
+mkdir -p bin
+exec /usr/bin/g++ -std=c++26 -Ofast -mavx2 -mbmi -march=native -flto \
+  -fmodulo-sched -fmodulo-sched-allow-regmoves -fgcse-sm -fgcse-las -m64 \
+  -fstack-protector-strong -fstack-clash-protection -fstrict-overflow -fext-numeric-literals \
+  -I../micron -I../micron/src -I"$YY_BUILD" "$src" $OBJS $LIBS -lm -lpthread -o "bin/$base"

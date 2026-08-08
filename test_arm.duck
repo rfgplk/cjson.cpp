@@ -1,0 +1,6 @@
+# cjson test suite cross-compiled for armv7-a + NEON (hard-float) and run under
+# qemu-arm-static — duck's --arm target drives the Linaro toolchain and emulates each
+# binary. Static linking so qemu needs no sysroot. The simd_arm32 kernels replace the
+# amd64 bodies under this build; the twin-identity suites are the safety net.
+# duck honors only FULL-LINE comments; never trail a comment after a command line.
+test tests/ -i ../micron/tests -i ../micron -i ../micron/src --arm -s -o bin/arm

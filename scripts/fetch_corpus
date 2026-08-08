@@ -1,0 +1,227 @@
+#!/bin/sh
+# Populate sample/web/ with the wide-net benchmark corpus.
+#
+# The tracked sample/ corpus is all one shape: generic pretty-printed object soup. The
+# corpora here deliberately are not — float arrays, pure number arrays, escape-heavy
+# strings, whitespace-heavy pretty text, deep nesting, geo polygons — because those are
+# the shapes that move the number kernel, the unescape path and stage 1 against each
+# other. benches/corpus_bench.cpp and benches/corpus_vs.cpp read whatever is present
+# here and silently skip whatever is not, so running them without a fetch still works.
+#
+# sample/web/ is gitignored: this is ~35 MB at the default tier and ~225 MB with --huge,
+# and none of it is ours to vendor.
+#
+#   scripts/fetch_corpus              core tier, ~35 MB (14 files)
+#   scripts/fetch_corpus --huge       adds citylots.json (190 MB)
+#   scripts/fetch_corpus --gen-1g     GENERATES sample/web/1GB.json locally (1 GB)
+#   scripts/fetch_corpus --suite      adds nst/JSONTestSuite test_parsing/ (accept/reject)
+#   scripts/fetch_corpus --verify     re-check what is already on disk, fetch nothing
+#
+# Every file is checked against a recorded size AND sha256; a mismatch is loud and the
+# bad file is removed rather than left for a bench to measure. Note this box ships
+# uutils coreutils, where `cp -u` silently skips copies GNU cp would make — nothing here
+# uses it, and nothing here should.
+set -e
+cd "$(dirname "$0")/.."
+
+DEST=sample/web
+SJ=https://raw.githubusercontent.com/simdjson/simdjson-data/master/jsonexamples
+
+HUGE=0
+SUITE=0
+VERIFY=0
+GEN1G=0
+for a in "$@"; do
+  case "$a" in
+    --huge) HUGE=1 ;;
+    --gen-1g) GEN1G=1 ;;
+    --suite) SUITE=1 ;;
+    --verify) VERIFY=1 ;;
+    -h|--help) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "fetch_corpus: unknown option $a" >&2; exit 2 ;;
+  esac
+done
+
+# name | bytes | sha256 | url | what it stresses
+MANIFEST=$(cat <<'EOF'
+canada.json|2251051|f83b3b354030d5dd58740c68ac4fecef64cb730a0d12a90362a7f23077f50d78|SJ|float arrays, geo coordinates
+citm_catalog.json|1727204|a73e7a883f6ea8de113dff59702975e60119b4b58d451d518a929f31c92e2059|SJ|object/map heavy, repeated keys
+github_events.json|65132|c9eebb2cf2d46649059e9d48700919bacb3e8e0fb58452065a1a9de7778fd22e|SJ|small api payload
+gsoc-2018.json|3327831|72f1ef4898d88049da856c2ab8f4ec3e2c968ce209b2bbfd16cef842eb2e185f|SJ|json-ld, long strings
+instruments.json|220346|f3069235d4e2695d36c0c7735a435a7abb279fc4d64bbcf4ed9f888b8da1fdb9|SJ|mixed scalars
+marine_ik.json|2983466|61590a397542ae274ccd8a47ba9f64e7c9216a223a5e7e702dea5b2375411d62|SJ|numeric mesh
+mesh.json|723597|45bc8bf429340a874a7af8ea7056d60497402f80f55dba1e6ecc4ca8f1e46aff|SJ|flat float arrays
+mesh.pretty.json|1577353|b08b8b1881b131f82f8a6b8f8b0226235488154d7363cc8302153e724776ae8e|SJ|whitespace heavy - the minify target
+numbers.json|150124|82e9ddfe00963110ed8a0704e7df4d1ad1af9c0f336d1b24431ebc63cf430a2b|SJ|pure float array - the number kernel
+twitterescaped.json|562408|2a288b5af4691c55b6f40fa534225b3e08b8d8b7f7ca4ed29bc5c7c81566ed4a|SJ|\uXXXX escape heavy - the unescape path
+update-center.json|533178|e7b6a037bfdb5abdf122fa3445ddfacea78522a23df31c4799884c4ebf4c01fa|SJ|string heavy
+semanticscholar-corpus.json|8593351|fd3a31c604da2529c51f0124fa74e186781185d3f4aeb49c0af2f740ffb63db3|SJ|large record array
+countries.geo.json|256950|bc2356a26a2976f98e4aaf1b24c5693d5a4dc9b6178aeb952dbafbcd42c73bcd|https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json|geojson, deep coordinate arrays
+api.github.com.json|12920264|80850db290cde4eb487e0efb587cf27f305e77b6bef96933ed8a09b5169d5b1d|https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json|deep nesting, huge openapi object
+EOF
+)
+
+MANIFEST_HUGE='citylots.json|189778220||https://raw.githubusercontent.com/zemirco/sf-city-lots-json/master/citylots.json|huge geojson (190 MB)'
+
+sha_of() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d" " -f1
+  else shasum -a 256 "$1" | cut -d" " -f1
+  fi
+}
+
+size_of() { wc -c < "$1" | tr -d ' '; }
+
+ok=0
+bad=0
+got=0
+
+handle() {
+  name=$1; want_sz=$2; want_sha=$3; url=$4
+  case "$url" in SJ) url="$SJ/$name" ;; esac
+  path="$DEST/$name"
+
+  if [ ! -f "$path" ]; then
+    if [ "$VERIFY" = 1 ]; then
+      echo "  MISSING  $name"
+      bad=$((bad + 1))
+      return 0
+    fi
+    echo "  fetching $name ..."
+    if ! curl -sSLf -o "$path.part" "$url"; then
+      echo "  FAILED   $name (download)" >&2
+      rm -f "$path.part"
+      bad=$((bad + 1))
+      return 0
+    fi
+    mv "$path.part" "$path"
+    got=$((got + 1))
+  fi
+
+  have_sz=$(size_of "$path")
+  if [ "$have_sz" != "$want_sz" ]; then
+    echo "  BAD SIZE $name: got $have_sz want $want_sz (removed)" >&2
+    rm -f "$path"
+    bad=$((bad + 1))
+    return 0
+  fi
+  # the huge tier carries no hash: it is 190 MB and upstream is not pinned
+  if [ -n "$want_sha" ]; then
+    have_sha=$(sha_of "$path")
+    if [ "$have_sha" != "$want_sha" ]; then
+      echo "  BAD SHA  $name (removed)" >&2
+      rm -f "$path"
+      bad=$((bad + 1))
+      return 0
+    fi
+  fi
+  ok=$((ok + 1))
+}
+
+mkdir -p "$DEST"
+echo "fetch_corpus: $DEST"
+
+# here-doc redirect, NOT a pipe: `... | while read` runs the loop in a subshell and
+# every ok/bad/got increment would be discarded at the end of it
+while IFS='|' read -r name sz sha url _desc; do
+  [ -n "$name" ] || continue
+  handle "$name" "$sz" "$sha" "$url"
+done <<MANIFEST_END
+$MANIFEST
+MANIFEST_END
+
+if [ "$HUGE" = 1 ]; then
+  while IFS='|' read -r name sz sha url _desc; do
+    [ -n "$name" ] || continue
+    handle "$name" "$sz" "$sha" "$url"
+  done <<HUGE_END
+$MANIFEST_HUGE
+HUGE_END
+fi
+
+if [ "$GEN1G" = 1 ]; then
+  # GENERATED, not fetched: nobody should download a gigabyte to run a benchmark, and
+  # no upstream corpus is that big anyway. Deterministic (fixed seed), so two machines
+  # produce byte-identical input.
+  #
+  # Shape is a mixed record array — strings, ints, floats, escapes, nested arrays and
+  # objects — rather than one degenerate repeated scalar, so the number means something.
+  # A ~4 MB block of unique records is emitted repeatedly with a rolling id; 4 MB is far
+  # past any cache or branch predictor on this box, so the repetition does not flatter
+  # the parse, and it keeps generation to seconds instead of an hour.
+  #
+  # MEMORY: a 1 GB DOM parse needs idx 4x(n) + pool n + vals — roughly 6-7 GB for cjson
+  # alone. Check `free -g` before running the bench, and see benches/corpus_bench.cpp.
+  BIG="$DEST/1GB.json"
+  if [ -f "$BIG" ]; then
+    echo "  1GB.json already present ($(size_of "$BIG") bytes)"
+  else
+    free_kb=$(df -Pk "$DEST" | awk 'NR==2 {print $4}')
+    if [ "${free_kb:-0}" -lt 1400000 ]; then
+      echo "  REFUSING to generate 1GB.json: only $((free_kb / 1024)) MB free on $DEST" >&2
+      exit 1
+    fi
+    echo "  generating 1GB.json (deterministic, ~1 GB) ..."
+    python3 - "$BIG" <<'PY'
+import random, sys
+
+TARGET = 1 << 30
+path = sys.argv[1]
+rnd = random.Random(0x5eed)
+words = ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel",
+         "india", "juliet", "kilo", "lima", "mike", "november", "oscar", "papa"]
+
+def record(i):
+    return (
+        '{"id":%d,"name":"%s-%04d","score":%.6f,"active":%s,'
+        '"tag":"%s","note":"line\\u0041\\nbreak %s",'
+        '"vec":[%.5f,%.5f,%.5f],'
+        '"meta":{"rev":%d,"kind":"%s","flags":[%d,%d]}}'
+    ) % (
+        i, rnd.choice(words), rnd.randrange(10000), rnd.uniform(-1e3, 1e3),
+        "true" if rnd.random() < 0.5 else "false",
+        rnd.choice(words), rnd.choice(words),
+        rnd.uniform(-1, 1), rnd.uniform(-1, 1), rnd.uniform(-1, 1),
+        rnd.randrange(-999, 999), rnd.choice(words),
+        rnd.randrange(256), rnd.randrange(256),
+    )
+
+# one ~4 MB block of unique records, then repeat it to length
+block, n = [], 0
+i = 0
+while n < (4 << 20):
+    r = record(i); i += 1
+    block.append(r); n += len(r) + 1
+block_s = ",".join(block)
+
+with open(path, "w", encoding="utf-8") as f:
+    f.write("[")
+    written = 1
+    first = True
+    while written < TARGET - len(block_s) - 2:
+        if not first:
+            f.write(","); written += 1
+        f.write(block_s); written += len(block_s)
+        first = False
+    f.write("]")
+PY
+    echo "  1GB.json -> $(size_of "$BIG") bytes"
+  fi
+fi
+
+if [ "$SUITE" = 1 ]; then
+  # correctness corpus, not a perf one: y_* must accept, n_* must reject, i_* are
+  # implementation-defined. used by the differential pass, never by a bench.
+  SUITE_DIR=$DEST/jsontestsuite
+  if [ ! -d "$SUITE_DIR" ]; then
+    echo "  fetching nst/JSONTestSuite test_parsing ..."
+    mkdir -p "$SUITE_DIR"
+    tmp=$DEST/.suite.tar.gz
+    curl -sSLf -o "$tmp" https://github.com/nst/JSONTestSuite/archive/refs/heads/master.tar.gz
+    tar -xzf "$tmp" -C "$SUITE_DIR" --strip-components=2 JSONTestSuite-master/test_parsing
+    rm -f "$tmp"
+  fi
+  echo "  suite: $(ls "$SUITE_DIR" | wc -l | tr -d ' ') cases in $SUITE_DIR"
+fi
+
+echo "fetch_corpus: $ok ok, $got newly fetched, $bad bad/missing"
+[ "$bad" = 0 ] || exit 1

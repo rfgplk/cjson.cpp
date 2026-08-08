@@ -1,0 +1,36 @@
+#!/bin/sh
+# Record baseline tables + perf-stat blocks + hotspot notes for built benches into
+# benches/results/<bench>.txt (gitignored *.txt is deliberate: results are per-box
+# measurements and the house rule is never-commit; git add -f to pin one).
+#
+#   scripts/snapshot [bench...]        default: every executable in bin/
+set -e
+cd "$(dirname "$0")/.."
+mkdir -p benches/results
+
+if [ $# -gt 0 ]; then
+  list="$*"
+else
+  list=$(find bin -maxdepth 1 -type f -perm -111 2>/dev/null | sed 's|^bin/||' | sort)
+fi
+
+CPU=$(lscpu | sed -n 's/^Model name: *//p' | head -1)
+KERN=$(uname -r)
+TREE=$(git rev-parse --short HEAD 2>/dev/null || echo '?')
+DIRTY=$(git status --porcelain 2>/dev/null | wc -l)
+
+for b in $list; do
+  [ -x "bin/$b" ] || { echo "snapshot: bin/$b missing, skipping"; continue; }
+  out="benches/results/$b.txt"
+  echo "snapshot: $b -> $out"
+  # || true: test binaries exit 1 as their PASS sentinel — never let set -e abort the
+  # sweep on one (prefer passing explicit bench names; the no-arg glob picks tests up)
+  {
+    echo "# $b  $(date +%F)  host: $CPU  kernel $KERN"
+    echo "# tree: $TREE (+$DIRTY dirty files)  build: duck/vsbuild --perf --fp --no-ssp --no-lto (vs TUs: -Ofast)"
+    echo ""
+    taskset -c 0 "./bin/$b" || true
+    echo ""
+    scripts/perfscan "bin/$b" || true
+  } > "$out" 2>&1
+done
