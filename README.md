@@ -1,6 +1,9 @@
+<img align="left" width="300" src="https://github.com/user-attachments/assets/1e92ab24-64be-47e1-aad4-d48b68146ea5" alt="cjson_logo"/>
+
+
 ### *cjson* 🧊
 
-#### constexpr-json — a header-only C++26 JSON parsing library
+#### the fastest header-only C++26 JSON parsing library
 
 <div align="left">
 
