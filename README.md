@@ -107,7 +107,7 @@ fast paths (SIMD kernels, `__builtin_memcpy` puns, abcmalloc arenas) sit behind
   <img alt="cjson corpus benchmark -- extract-dom (GB/s)" src="benches/charts/op-extract-dom.gbpsf.png">
 </picture>
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="op-serialize.gbps.dark.png">
+  <source media="(prefers-color-scheme: dark)" srcset="benches/charts/op-serialize.gbps.dark.png">
   <img alt="cjson corpus benchmark -- serialize (GB/s)" src="benches/charts/op-serialize.gbps.dark.png">
 </picture>
 
