@@ -31,6 +31,9 @@ main()
   const cjson::view v = rv.cast<cjson::view>();
   const cjson::cur root = v.root();
 
+  //const cjson::view rv = cjson::process(k_src, k_len, sc);
+  //const cjson::cur root = v.root();
+
   // scalars
   ex::head("scalars");
 

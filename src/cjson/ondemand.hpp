@@ -703,4 +703,76 @@ iterate(const C &in, scratch &sc) noexcept
   return iterate(as_bytes(in), opts{}, sc);
 }
 
+// direct API (only use these if you're sure you don't need error handling)
+inline view
+process(bytes in, opts o, scratch &sc) noexcept
+{
+  if ( in.len == 0 ) return view{};
+  if ( !sc.ensure(in.len) ) return view{};
+  const max_t n = __scan::index_input(in.ptr, in.len, sc.idx, o);
+  if ( n <= 0 ) view{};
+  view v{};
+  v.__p = in.ptr;
+  v.__len = in.len;
+  v.__idx = sc.idx;
+  v.__n = n;
+  return v;
+}
+
+inline view
+process(bytes in, scratch &sc) noexcept
+{
+  return process(in, opts{}, sc);
+}
+
+inline view
+process(const char *p, usize n, opts o, scratch &sc) noexcept
+{
+  return process(bytes{ reinterpret_cast<const u8 *>(p), n }, o, sc);
+}
+
+inline view
+process(const char *p, usize n, scratch &sc) noexcept
+{
+  return process(bytes{ reinterpret_cast<const u8 *>(p), n }, opts{}, sc);
+}
+
+inline view
+process(const u8 *p, usize n, opts o, scratch &sc) noexcept
+{
+  return process(bytes{ p, n }, o, sc);
+}
+
+inline view
+process(const u8 *p, usize n, scratch &sc) noexcept
+{
+  return process(bytes{ p, n }, opts{}, sc);
+}
+
+inline view
+process(strv in, opts o, scratch &sc) noexcept
+{
+  return process(bytes{ reinterpret_cast<const u8 *>(in.ptr), in.len }, o, sc);
+}
+
+inline view
+process(strv in, scratch &sc) noexcept
+{
+  return process(bytes{ reinterpret_cast<const u8 *>(in.ptr), in.len }, opts{}, sc);
+}
+
+template<text_source C>
+inline view
+process(const C &in, opts o, scratch &sc) noexcept
+{
+  return process(as_bytes(in), o, sc);
+}
+
+template<text_source C>
+inline view
+process(const C &in, scratch &sc) noexcept
+{
+  return process(as_bytes(in), opts{}, sc);
+}
+
 };      // namespace cjson
