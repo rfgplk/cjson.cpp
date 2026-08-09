@@ -1,4 +1,4 @@
-<img align="left" width="300" src="https://github.com/user-attachments/assets/a176bdfa-d6b2-47dc-a5d2-408026abb14f" alt="cjson_logo"/>
+<img align="left" width="300" src="https://github.com/user-attachments/assets/8d0957bd-aad7-4aa5-bd9a-59ae9c742a9e" alt="cjson_logo"/>
 
 
 ### *cjson* 🧙‍♂️
