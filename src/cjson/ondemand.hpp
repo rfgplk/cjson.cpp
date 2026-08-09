@@ -453,6 +453,7 @@ class view
 
   friend class cur;
   friend inline result<view> iterate(bytes, opts, scratch &) noexcept;
+  friend inline view process(bytes, opts, scratch &) noexcept;
 
 public:
   ~view() = default;
