@@ -43,6 +43,7 @@ enum class error : i32 {
   no_such_field,         // object key / json-pointer / array index miss
   out_of_range,          // number does not fit the requested integer type
   oom,                   // arena/scratch/output allocation failed
+  io_error,              // kernel-side failure on the flash sink (ring setup, short write, fsync)
 };
 
 template<typename T> using result = micron::option<T, error>;
@@ -93,6 +94,8 @@ error_name(error e) noexcept
     return "out_of_range";
   case error::oom:
     return "oom";
+  case error::io_error:
+    return "io_error";
   }
   return "unknown";
 }

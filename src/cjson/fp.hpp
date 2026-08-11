@@ -24,6 +24,7 @@
 #include "config.hpp"
 #include "doc.hpp"
 #include "error.hpp"
+#include "mutate.hpp"
 #include "ondemand.hpp"
 #include "value.hpp"
 
@@ -59,6 +60,7 @@ concept json_value = requires(const V v, strv k, usize i) {
 
 static_assert(json_value<val>);
 static_assert(json_value<cur>);
+static_assert(json_value<mut>);
 
 template<typename R>
 concept json_range = requires(const R &r) {
@@ -824,6 +826,8 @@ inline constexpr auto max_of = [](auto a, auto b) constexpr noexcept { return a 
 inline constexpr auto min_of = [](auto a, auto b) constexpr noexcept { return b < a ? b : a; };
 
 inline constexpr auto to_i64 = [](const auto &v) constexpr noexcept { return v.i64_or(i64(0)); };
+
+inline const auto to_pun = [](const auto &v) { return pun(v); };
 inline constexpr auto to_u64 = [](const auto &v) constexpr noexcept { return v.u64_or(u64(0)); };
 inline constexpr auto to_f64 = [](const auto &v) constexpr noexcept { return v.f64_or(f64(0)); };
 inline constexpr auto to_bool = [](const auto &v) constexpr noexcept { return v.bool_or(false); };

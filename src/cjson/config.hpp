@@ -41,13 +41,32 @@
 namespace cjson
 {
 class value;
-// hehe
-using pun = micron::any<bool, u64, i64, f64, micron::string, const cjson::value *>;
+class doc;
 
 using bytes = micron::raw_slice<const u8>;       // borrowed input view; never mutated or padded
 using wbytes = micron::raw_slice<u8>;            // buffer (insitu / _into outputs)
 using strv = micron::raw_slice<const char>;      // strings out of getters ({.ptr,.len})
 using fjson = micron::slice<u8>;                 // owned byte output
+
+struct jnull {
+  constexpr bool
+  operator==(const jnull &) const noexcept
+  {
+    return true;
+  }
+};
+
+struct vref {
+  const doc *d = nullptr;
+  const value *v = nullptr;
+};
+
+struct jraw {
+  strv text{};
+};
+
+// hehe
+using pun = micron::any<bool, u64, i64, f64, micron::string, vref, jraw, jnull>;
 
 inline constexpr usize padding = 64;
 
@@ -242,6 +261,14 @@ __fill_spaces(u8 *dst, usize n) noexcept
   usize i = 0;
   for ( ; i + 8 <= n; i += 8 ) __store64(dst + i, 0x2020202020202020ull);
   for ( ; i < n; ++i ) dst[i] = u8(0x20);
+}
+
+constexpr void
+__fill_zeros(u8 *dst, usize n) noexcept
+{
+  usize i = 0;
+  for ( ; i + 8 <= n; i += 8 ) __store64(dst + i, 0x3030303030303030ull);
+  for ( ; i < n; ++i ) dst[i] = u8('0');
 }
 
 // inlinable copy for short runs

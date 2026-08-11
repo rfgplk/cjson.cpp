@@ -38,7 +38,7 @@ main()
     mc::echo("parse failed: ", cjson::error_name(r.cast<cjson::error>()));
     return 1;
   }
-  const cjson::doc &d = r.cast<cjson::doc>();
+  cjson::doc &d = r.cast<cjson::doc>();
   mc::echo("value slots in the arena: ", d.size());
 
   // b) read fields
@@ -65,7 +65,23 @@ main()
   // rfc 6901 json pointer
   mc::echo("/limits/burst = ", root.at_pointer("/limits/burst").i64_or(0));
 
-  // c) build a response
+  // c) edit the parsed doc in place, then export it
+  // NOTE: indexing a non-const doc hands back a mutable proxy
+  ex::head("mutate");
+
+  d["service"] = "billing-v2";        // strings may grow: the pool is appended to
+  d["limits"]["rps"] = 50;            // numbers, bools and null are rewritten in place
+  d["tls"] = true;
+  d.edit().insert("region") = "eu-west-1";      // add a member that was never there
+  d["peers"].push_back() = "10.0.0.3";          // grow an array
+  d.edit().erase("nope");                       // erasing a miss is reported, not fatal
+
+  mc::echo("mut_error   = ", cjson::error_name(d.mut_error()));
+  d.clear_mut_error();
+
+  mc::echo("edited      = ", cjson::write_str(d));
+
+  // d) build a response
   ex::head("build");
 
   cjson::builder b;

@@ -40,7 +40,13 @@ validation, minification, serialization, and writing**, a **lazy functional laye
   - **a lazy functional layer**: `fmap`/`filter`/`fold`/`take`/`flat_map`,
     curried for OCaml-style `|` pipes
   - **one-shot helpers**: `cjson::get<i64>(text, "/a/b")`
-  - **simple `any` overloads** for simple development: `cjson::get(text, "/a/b") -> micron::any<...>`
+  - **`any` overloads** for simple development: `cjson::get(text, "/a/b") -> micron::any<...>`,
+    carrying objects and arrays as navigable handles, not just scalars
+  - **mutate in place**: `d["name"] = "new_name"`, add and remove members and elements,
+    then write the document back out
+  - **a porcelain layer** over micron containers: `cjson::to_map(root)` into any
+    concept-satisfying `micron` map, and back to json again
+  - **io_uring** backed native file i/o
   - header-only, freestanding-capable, depends only on the *micron* core library
 
 ------
@@ -92,28 +98,28 @@ fast paths (SIMD kernels, `__builtin_memcpy` puns, abcmalloc arenas) sit behind
 ##### Benchmarks
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="benches/charts/headline-large-filef.png">
-  <img alt="cjson vs yyjson, simdjson, rapidjson, glaze, boost.json and nlohmann -- full DOM parse of a 26MB file: throughput, cycles per op and instructions per op" src="benches/charts/headline-large-filef.png">
+  <source media="(prefers-color-scheme: dark)" srcset="benches/charts/headline-large-file.github.png">
+  <img alt="cjson vs yyjson, simdjson, rapidjson, glaze, boost.json and nlohmann -- full DOM parse of a 26MB file: throughput, cycles per op and instructions per op" src="benches/charts/headline-large-file.github.png">
 </picture>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="benches/charts/headline-5MBf.png">
-  <img alt="the same eight libraries on a 5 MB document: throughput, cycles per op and instructions per op" src="benches/charts/headline-5MBf.png">
+  <source media="(prefers-color-scheme: dark)" srcset="benches/charts/headline-5MB.github.png">
+  <img alt="the same eight libraries on a 5 MB document: throughput, cycles per op and instructions per op" src="benches/charts/headline-5MB.github.png">
 </picture>
 
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="benches/charts/op-parse.gbpsf.png">
-  <img alt="cjson corpus benchmark -- parse (GB/s)" src="benches/charts/op-parse.gbpsf.png">
+  <source media="(prefers-color-scheme: dark)" srcset="benches/charts/op-parse.gbps.github.png">
+  <img alt="cjson corpus benchmark -- parse (GB/s)" src="benches/charts/op-parse.gbps.github.png">
 </picture>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="benches/charts/op-extract-dom.gbpsf.png">
-  <img alt="cjson corpus benchmark -- extract-dom (GB/s)" src="benches/charts/op-extract-dom.gbpsf.png">
+  <source media="(prefers-color-scheme: dark)" srcset="benches/charts/op-extract-dom.gbps.github.png">
+  <img alt="cjson corpus benchmark -- extract-dom (GB/s)" src="benches/charts/op-extract-dom.gbps.github.png">
 </picture>
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="benches/charts/op-serialize.gbps.dark.png">
-  <img alt="cjson corpus benchmark -- serialize (GB/s)" src="benches/charts/op-serialize.gbps.dark.png">
+  <source media="(prefers-color-scheme: dark)" srcset="benches/charts/op-serialize.gbps.github.png">
+  <img alt="cjson corpus benchmark -- serialize (GB/s)" src="benches/charts/op-serialize.gbps.github.png">
 </picture>
 
 Full DOM parse throughput, **GB/s, higher is better**. AMD Ryzen 7 3700U, kernel 7.1.5,
@@ -121,27 +127,7 @@ GCC 16.1.1, `taskset -c 0`, medians of 7. Every contender parses the same bytes 
 mode. `cjson-reuse` borrows a warm scratch; plain `cjson` allocates and frees per op.
 
 Reproduce with `scripts/fetch_corpus && scripts/vsbuild benches/corpus_vs.cpp &&
-taskset -c 0 ./bin/corpus_vs`, and graph it with `scripts/chart_corpus`.
-
-| corpus | shape | size | cjson | cjson-reuse | yyjson | simdjson-dom | rapidjson | glaze | boost.json | nlohmann |
-|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| `64kb` | generic object soup | 56 KB | **2.41** | 2.38 | 1.48 | 1.95 | 0.35 | 0.37 | 0.31 | 0.08 |
-| `github_events` | small API payload | 64 KB | 2.33 | **2.47** | 1.64 | 2.31 | 0.36 | 0.32 | 0.28 | 0.08 |
-| `numbers` | pure float array | 147 KB | 0.36 | 0.60 | 0.41 | **0.77** | 0.24 | 0.16 | 0.24 | 0.05 |
-| `instruments` | mixed scalars | 215 KB | 0.52 | 1.43 | 0.53 | **1.70** | 0.36 | 0.24 | 0.23 | 0.07 |
-| `countries.geo` | GeoJSON, deep coord arrays | 251 KB | 0.21 | 0.34 | 0.27 | **0.53** | 0.25 | 0.11 | 0.14 | 0.03 |
-| `update-center` | string heavy | 521 KB | 0.53 | **1.71** | 0.46 | 1.48 | 0.22 | 0.17 | 0.16 | 0.05 |
-| `twitterescaped` | `\uXXXX` escape heavy | 549 KB | 0.47 | **1.13** | 0.52 | 0.99 | 0.25 | 0.22 | 0.18 | 0.06 |
-| `twitter` | social API, unicode | 617 KB | 0.64 | **1.95** | 0.56 | 1.87 | 0.30 | 0.26 | 0.22 | 0.07 |
-| `mesh` | flat float arrays | 707 KB | 0.25 | 0.45 | 0.29 | **0.62** | 0.20 | 0.10 | 0.16 | 0.04 |
-| `citm_catalog` | object/map heavy | 1.6 MB | 0.62 | **1.83** | 0.57 | 1.66 | 0.48 | 0.34 | 0.33 | 0.09 |
-| `canada` | float arrays, geo coords | 2.1 MB | 0.29 | 0.48 | 0.34 | **0.64** | 0.33 | 0.16 | 0.24 | 0.04 |
-| `5MB` | generated object soup | 4.9 MB | 0.66 | **1.80** | 0.60 | 1.67 | 0.27 | 0.30 | 0.29 | 0.07 |
-| `1GB` | generated, number-heavy | 1.07 GB | 0.24 | 0.46 | 0.27 | **0.55** | — | — | — | — |
-
-> Note the two right-hand panels against the first: `cyc/op` and `ins/op` are
-> **user-space** counters, `GB/s` is wall clock. A row that allocates per op suffers
-> page-faults and `mmap` time in the kernel, not tracking by the counters.
+taskset -c 0 ./bin/corpus_vs`, and graph it with `scripts/chart_corpus` (`--mode github`
 
 ------
 
@@ -153,7 +139,11 @@ All entry points live in `namespace cjson`. Types are *micron* types.
 namespace cjson {
 
 // types
-using pun    = micron::any<bool, u64, i64, f64, micron::string, const cjson::value *>;
+struct jnull { };                              // json null, distinct from "no value"
+struct vref  { const doc *d; const value *v; };// a dom subtree, 16 bytes, navigable
+struct jraw  { strv text; };                   // a span of the caller's json text
+
+using pun    = micron::any<bool, u64, i64, f64, micron::string, vref, jraw, jnull>;
 using bytes  = micron::raw_slice<const u8>;    // borrowed input view
 using wbytes = micron::raw_slice<u8>;          // buffer
 using strv   = micron::raw_slice<const char>;  // strings out of getters ({.ptr,.len})
@@ -206,6 +196,36 @@ class doc {                              // move-only
   constexpr bool  borrowed() const noexcept;
   constexpr bool  alive() const noexcept;
   constexpr void  release() noexcept;
+
+  // mutating in place fns
+  constexpr val   operator[](strv|const char*|usize) const noexcept;
+  constexpr mut   operator[](strv|const char*|usize) noexcept;
+  constexpr mut   edit() noexcept;            // mutable root, for chaining
+  constexpr error mut_error() const noexcept;
+  constexpr void  clear_mut_error() noexcept;
+};
+
+class mut : public val {
+  const mut &operator=(bool|integral|floating|const char*|strv|is_string|nullptr) const;
+
+  constexpr error set(i64|u64|f64|bool|strv|const char*|is_string) const noexcept;
+  constexpr error set_null() const noexcept;
+  constexpr error set_number(bytes) const noexcept;   // via the parser's own kernel
+
+  // objects
+  constexpr mut   insert(strv|const char*|is_string) const noexcept;  // create-or-find
+  constexpr mut   insert_object(...) const noexcept;  // create-or-find as empty {}
+  constexpr mut   insert_array(...) const noexcept;   // create-or-find as empty []
+  constexpr error rename(strv from, strv to) const noexcept;  // in place, keeps position
+  constexpr error erase(strv|const char*|is_string) const noexcept;
+
+  // arrays
+  constexpr mut   push_back() const noexcept;   // appends null, hands back the slot
+  constexpr mut   push_object() const noexcept;
+  constexpr mut   push_array() const noexcept;
+  constexpr error erase(usize) const noexcept;
+
+  constexpr error clear() const noexcept;       // either container -> {} or []
 };
 
 // parse / validate
@@ -315,6 +335,32 @@ constexpr max_t minify(bytes in, wbytes out, opts = {}) noexcept;
 result<fjson>          minify(bytes, opts = {});
 result<micron::string> minify_str(bytes, opts = {});
 
+// subtree writers
+constexpr usize        write_bound(val, style = {}) noexcept;
+constexpr max_t        write_into (val, wbytes, style = {}) noexcept;
+micron::string         write_str  (val, style = {});
+fjson                  write      (val, style = {});
+
+// json <-> micron containers (runtime only)
+using object_map = micron::hswiss<micron::string, pun>;
+using array_vec  = micron::vector<pun>;
+
+result<object_map> to_map(val);        result<object_map> to_map(cur);
+result<array_vec>  to_vector(val);     result<array_vec>  to_vector(cur);
+
+template <pun_map M> error to_map_into(val|cur, M &);
+template <pun_seq V> error to_vector_into(val|cur, V &);
+
+constexpr usize map_slots(val) noexcept;
+
+template <pun_map M> result<micron::string> to_json(const M &);
+template <pun_seq V> result<micron::string> to_json_seq(const V &);
+template <pun_map M> error write_map(builder &, const M &);
+template <pun_seq V> error write_seq(builder &, const V &);
+void write_pun(builder &, const pun &);    // one value, any kind, into a builder
+
+struct key_view { key_view(strv); strv view() const noexcept; /* ... */ };
+
 class builder {
   builder();  explicit builder(micron::string &&reuse);  // recycle the buffer
   error err() const noexcept;
@@ -340,7 +386,7 @@ template <str S, opts O = {}> consteval auto  parse();         // -> tree<NV, NS
 template <auto &Tree, style St = {}> consteval auto write();   // -> bytes<N>
 ```
 
-`examples/` has eight programs covering each layer:
+`examples/` has nine programs covering each layer:
 
 | | |
 |---|---|
@@ -352,6 +398,7 @@ template <auto &Tree, style St = {}> consteval auto write();   // -> bytes<N>
 | `06_build_write.cpp` | `builder`, `write`, `minify`, the sticky error |
 | `07_comptime.cpp` | `ct::` — almost entirely `static_assert` |
 | `08_strings.cpp` | every text flavour through every entry point |
+| `09_porcelain.cpp` | `pun`, `to_map`, and the micron container fns |
 
 ##### Configuration
 
@@ -384,7 +431,9 @@ scripts/vsbuild benches/corpus_vs.cpp    # head-to-head against six libraries
 taskset -c 0 ./bin/corpus_vs > benches/results/corpus_vs.txt
 scripts/chart_corpus benches/results/corpus_vs.txt --headline
 scripts/chart_corpus benches/results/corpus_vs.txt --all-metrics
-scripts/chart_corpus benches/results/corpus_vs.txt --headline --mode dark
+scripts/chart_corpus benches/results/corpus_vs.txt --headline --mode github
+scripts/chart_vs benches/results/parse_vs.txt            # same style, parse_vs/write_vs
+scripts/chart_vs benches/results/write_vs.txt --mode github
 scripts/snapshot <bench>
 ```
 
@@ -401,6 +450,11 @@ taskset -c 0 ./bin/corpus_vs parse only=twitter,canada,numbers
   - The lazy `fp` layer is **left-fold only**
   - A warm scratch holds memory proportional to the largest document it has seen until
     `release()`.
+  - **The porcelain fns (`pun`, `to_map`, `to_vector`) are runtime-only.**
+  - Mutation invalidates handles on structural edits.
+  - Erasing a member does not reclaim its pool bytes.
+  - On the on-demand path, object keys marshalled by `to_map` are **raw** — `\u` escapes
+    are not decoded, matching `cur::str_raw()`.
   - Depends on the *micron* core library as its sole dependency.
 
 ------

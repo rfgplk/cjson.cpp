@@ -581,7 +581,7 @@ build_t(u8 *__restrict pool, usize len, const u32 *__restrict idx, const max_t n
           return r;
         }
         if constexpr ( Bounds ) {
-          wb0 += RawNumbers ? 12 : 42;
+          wb0 += RawNumbers ? u64(get_len(vs[vi])) + 12 : 42;
           wp0 += 3;
           wp1 += pdepth;
         }
@@ -741,8 +741,10 @@ __parse_into(doc &d, bytes in, opts o, scratch &sc) noexcept
   }
   d.__vals = a.slab;
   d.__nvals = usize(r);
+  d.__vcap = a.cap;
   d.__pool = pool;
   d.__pcap = pcap;
+  d.__plen = in.len;
   d.__consumed = consumed;
   d.__wb = wb;
   d.__borrowed = false;
@@ -774,8 +776,10 @@ __parse_reuse_into(doc &d, bytes in, opts o, scratch &sc) noexcept
     return r;
   d.__vals = a.slab;
   d.__nvals = usize(r);
+  d.__vcap = 0;
   d.__pool = pool;
   d.__pcap = pcap;
+  d.__plen = in.len;
   d.__consumed = consumed;
   d.__wb = wb;
   d.__borrowed = true;
@@ -801,9 +805,11 @@ __parse_insitu_into(doc &d, wbytes in, opts o, scratch &sc) noexcept
   }
   d.__vals = a.slab;
   d.__nvals = usize(r);
+  d.__vcap = a.cap;
   d.__pool = nullptr;
   d.__alias = in.ptr;
   d.__pcap = 0;
+  d.__plen = in.len;
   d.__consumed = consumed;
   d.__wb = wb;
   d.__borrowed = false;
@@ -831,9 +837,11 @@ __parse_insitu_reuse_into(doc &d, wbytes in, opts o, scratch &sc) noexcept
     return r;
   d.__vals = a.slab;
   d.__nvals = usize(r);
+  d.__vcap = 0;
   d.__pool = nullptr;
   d.__alias = in.ptr;
   d.__pcap = 0;
+  d.__plen = in.len;
   d.__consumed = consumed;
   d.__wb = wb;
   d.__borrowed = true;

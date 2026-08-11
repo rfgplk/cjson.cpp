@@ -50,6 +50,7 @@ int gl_parse(void *, const char *, unsigned long);
 int gl_load(void *, const char *, unsigned long);
 long long gl_serialize(void *);
 long long gl_extract(void *, const char *, unsigned long, const char *);
+long long gl_extract_reach(void *, const char *, unsigned long, const char *);
 };
 
 namespace
@@ -332,6 +333,11 @@ main(int argc, char **argv)
       const bool a_nl = ok_nl && agrees("nlohmann", got_nl);
 
       {
+        // per-contender denominator, as corpus_vs.cpp does and for the same reason:
+        // glaze's lazy walk stops at the pointer, cjson and simdjson index the whole
+        // buffer, so only the first of the three has read n bytes by the time it answers
+        const u64 gl_bytes = a_gl ? u64(gl_extract_reach(gl, buf, n, c.ptr)) : 0;
+
         mb::row g[3];
         u32 k = 0;
         g[k++] = mb::bench_one("extract-lazy", "cjson-ondemand", n, n, [&] { mb::sink_size(usize(cj_extract(in, c.ptr, od_sc))); }, cap);
@@ -339,7 +345,11 @@ main(int argc, char **argv)
           g[k++] = mb::bench_one(
               "extract-lazy", "simdjson-ondemand", n, n, [&] { mb::sink_size(usize(sj_od_extract(sj_od, buf, n, c.ptr))); }, cap);
         if ( a_gl )
-          g[k++] = mb::bench_one("extract-lazy", "glaze-lazy", n, n, [&] { mb::sink_size(usize(gl_extract(gl, buf, n, c.ptr))); }, cap);
+          // reps_cap on the BYTES READ, not on n — see corpus_vs.cpp: the cap bounds work
+          // that scales with the document, and a lazy walk to a shallow pointer does not
+          g[k++] = mb::bench_one(
+              "extract-lazy", "glaze-lazy", n, gl_bytes ? gl_bytes : n, [&] { mb::sink_size(usize(gl_extract(gl, buf, n, c.ptr))); },
+              gl_bytes ? reps_cap(gl_bytes) : cap);
         mb::print_group(g, k);
       }
       {

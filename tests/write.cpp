@@ -41,6 +41,14 @@ text_is(const char *jdoc, const char *want)
   return true;
 }
 
+constexpr usize
+slen(const char *s) noexcept
+{
+  usize n = 0;
+  while ( s[n] ) ++n;
+  return n;
+}
+
 // semantic equality via re-serialization comparison
 bool
 fixpoint(const u8 *p, usize n)
@@ -208,6 +216,90 @@ main()
     sb::require_true(w == 7);
     u8 tiny[4];
     sb::require_true(cjson::write_into(d, cjson::wbytes{ tiny, sizeof(tiny) }) == cjson::fail(cjson::error::short_output));
+    sb::end_test_case();
+  }
+  {
+    sb::test_case("kind::raw serializes its token, not null");
+    // opts{.numbers_as_raw} parks the source token instead of converting it. write_scalar
+    // had no raw arm, so every number in such a document came out as `null` -- the old
+    // raw coverage only compared bounds, never the bytes
+    const char *j = R"({"a":[1,2.5e10,-3,1.000000000000000000000000000001],"b":0})";
+    auto r = cjson::parse(j, slen(j), cjson::opts{ .numbers_as_raw = true });
+    sb::require_true(r.is_first());
+    const cjson::doc &d = r.cast<cjson::doc>();
+    micron::string got = cjson::write_str(d);
+    sb::require_true(got.size() == slen(j));
+    bool same = true;
+    for ( usize i = 0; i < got.size(); i++ ) same = same and got[i] == j[i];
+    sb::require_true(same);
+
+    // and the emitted length must sit inside the bound, for a token far past the old
+    // flat 12 bytes raw used to be charged
+    const char *big = R"([123456789012345678901234567890123456789012345678901234567890.5e100])";
+    auto rb = cjson::parse(big, slen(big), cjson::opts{ .numbers_as_raw = true, .with_write_bound = true });
+    sb::require_true(rb.is_first());
+    const cjson::doc &db = rb.cast<cjson::doc>();
+    micron::string gb = cjson::write_str(db);
+    sb::require_true(gb.size() == slen(big));
+    sb::require_true(cjson::write_bound(db) >= gb.size());
+    sb::end_test_case();
+  }
+  {
+    sb::test_case("wbuf reuse is byte-identical to the owning writer and keeps capacity");
+    const char *src = R"({"a":[1,2,3],"b":"x\ny","c":1.5e300,"d":null})";
+    auto r = cjson::parse(src, slen(src));
+    sb::require_true(r.is_first());
+    const cjson::doc &d = r.cast<cjson::doc>();
+
+    for ( cjson::style st : { cjson::style{}, cjson::style{ .indent = 2 }, cjson::style{ .indent = 4 } } ) {
+      cjson::fjson want = cjson::write(d, st);
+      cjson::wbuf wb;
+      const max_t w = cjson::write_into(d, wb, st);
+      sb::require_true(w > 0);
+      sb::require_true(wb.size() == want.size());
+      bool same = true;
+      for ( usize i = 0; i < want.size(); i++ ) same = same and wb.data()[i] == want.first()[i];
+      sb::require_true(same);
+
+      // second pass through the SAME buffer must not grow it and must produce the same bytes
+      const usize cap0 = wb.capacity();
+      const max_t w2 = cjson::write_into(d, wb, st);
+      sb::require_true(w2 == w);
+      sb::require_true(wb.capacity() == cap0);
+      for ( usize i = 0; i < want.size(); i++ ) same = same and wb.data()[i] == want.first()[i];
+      sb::require_true(same);
+    }
+
+    // a warm buffer sized by a big document must serve a small one without reallocating
+    cjson::wbuf wb;
+    const char *bigsrc = R"([100000,200000,300000,400000,500000,600000,700000,800000])";
+    auto rbig = cjson::parse(bigsrc, slen(bigsrc));
+    sb::require_true(rbig.is_first());
+    sb::require_true(cjson::write_into(rbig.cast<cjson::doc>(), wb) > 0);
+    const usize warm = wb.capacity();
+    sb::require_true(cjson::write_into(d, wb) > 0);
+    sb::require_true(wb.capacity() == warm);
+
+    // clear() keeps the allocation; reset() drops it
+    wb.clear();
+    sb::require_true(wb.size() == 0 and wb.capacity() == warm);
+    wb.reset();
+    sb::require_true(wb.capacity() == 0 and wb.data() == nullptr);
+
+    // subtree overload agrees with the subtree owning writer
+    cjson::val sub = d.root()["a"];
+    cjson::fjson swant = cjson::write(sub);
+    cjson::wbuf sb2;
+    sb::require_true(cjson::write_into(sub, sb2) == max_t(swant.size()));
+    bool ssame = true;
+    for ( usize i = 0; i < swant.size(); i++ ) ssame = ssame and sb2.data()[i] == swant.first()[i];
+    sb::require_true(ssame);
+
+    // a dead doc reports empty_input and leaves the buffer empty, not stale
+    cjson::doc dead{};
+    cjson::wbuf db;
+    sb::require_true(cjson::write_into(dead, db) == cjson::fail(cjson::error::empty_input));
+    sb::require_true(db.size() == 0);
     sb::end_test_case();
   }
   {

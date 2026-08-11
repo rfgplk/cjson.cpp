@@ -131,31 +131,35 @@ write_f64(u8 *buf, f64 val) noexcept
   if ( e10 >= 0 and e10 <= 20 ) {
     if ( n <= e10 + 1 ) {
       // ddd[000].0
-      for ( i32 i = 0; i < n; ++i ) *buf++ = tmp[i];
-      for ( i32 i = n; i <= e10; ++i ) *buf++ = u8('0');
+      for ( i32 i = 0; i < n; ++i ) buf[i] = tmp[i];
+      buf += n;
+      __fill_zeros(buf, usize(e10 + 1 - n));
+      buf += e10 + 1 - n;
       buf[0] = u8('.');
       buf[1] = u8('0');
       return buf + 2;
     }
     // dd.ddd
-    for ( i32 i = 0; i <= e10; ++i ) *buf++ = tmp[i];
+    for ( i32 i = 0; i <= e10; ++i ) buf[i] = tmp[i];
+    buf += e10 + 1;
     *buf++ = u8('.');
-    for ( i32 i = e10 + 1; i < n; ++i ) *buf++ = tmp[i];
-    return buf;
+    for ( i32 i = 0; i < n - e10 - 1; ++i ) buf[i] = tmp[e10 + 1 + i];
+    return buf + (n - e10 - 1);
   }
   if ( e10 < 0 and e10 >= -6 ) {
-    // 0.000ddd
-    *buf++ = u8('0');
-    *buf++ = u8('.');
+    buf[0] = u8('0');
+    buf[1] = u8('.');
+    buf += 2;
     for ( i32 i = -1; i > e10; --i ) *buf++ = u8('0');
-    for ( i32 i = 0; i < n; ++i ) *buf++ = tmp[i];
-    return buf;
+    for ( i32 i = 0; i < n; ++i ) buf[i] = tmp[i];
+    return buf + n;
   }
   // d[.ddd]e[-]EEE
   *buf++ = tmp[0];
   if ( n > 1 ) {
     *buf++ = u8('.');
-    for ( i32 i = 1; i < n; ++i ) *buf++ = tmp[i];
+    for ( i32 i = 0; i < n - 1; ++i ) buf[i] = tmp[1 + i];
+    buf += n - 1;
   }
   *buf++ = u8('e');
   u32 mag = 0;

@@ -10,3 +10,4 @@ build examples/05_oneshot.cpp -i include/micron -i include/micron/src
 build examples/06_build_write.cpp -i include/micron -i include/micron/src
 build examples/07_comptime.cpp -i include/micron -i include/micron/src
 build examples/08_strings.cpp -i include/micron -i include/micron/src
+build examples/09_porcelain.cpp -i include/micron -i include/micron/src

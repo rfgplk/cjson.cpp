@@ -20,6 +20,10 @@
 // without building a dom. That is what its extract row uses, because that is what
 // anyone reaching for glaze on a hot path would use. Its parse and serialize rows are
 // full-dom, like everyone else's.
+//
+// Which is why gl_extract_reach exists: the walk stops at the value the pointer names
+// and never sees the rest of the buffer, so the extract-lazy row has to be denominated
+// in the bytes it actually read, not in the document it was handed.
 
 #include <glaze/json.hpp>
 
@@ -106,6 +110,21 @@ gl_extract(void *, const char *buf, unsigned long n, const char *ptr)
   glz::generic v{};
   if ( glz::read_json(v, *view) ) return 0;
   return checksum(v);
+}
+
+// bytes gl_extract actually has to look at, for the caller's GB/s denominator.
+// get_view_json returns a view INTO buf, so the walk stopped at
+// (view.data() - buf) + view.size() and never touched the tail beyond it. Charging the
+// extract-lazy row the whole document instead credits glaze bytes it never read — that
+// is what printed "glaze-lazy 3841.68 GB/s" on an 8.6 MB corpus it resolved in 636
+// cycles. Timing-free and called once, outside the measured loop.
+long long
+gl_extract_reach(void *, const char *buf, unsigned long n, const char *ptr)
+{
+  const std::string_view sv(buf, n);
+  const auto view = glz::get_view_json(std::string_view(ptr), sv);
+  if ( !view ) return 0;
+  return static_cast<long long>(view->data() - buf) + static_cast<long long>(view->size());
 }
 
 };      // extern "C"

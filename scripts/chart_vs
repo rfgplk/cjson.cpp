@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+"""Turn parse_vs / write_vs output into charts, in the same style as chart_corpus.
+
+    scripts/vsbuild benches/parse_vs.cpp
+    taskset -c 0 ./bin/parse_vs > benches/results/parse_vs.txt
+    scripts/chart_vs benches/results/parse_vs.txt                  # one per op group
+    scripts/chart_vs benches/results/write_vs.txt --mode github
+    scripts/chart_vs benches/results/parse_vs.txt --headline twitter
+
+Same row layout as corpus_vs, different axes: these two benches sweep one op vocabulary
+across a handful of documents rather than a wide corpus. So the default figure is one
+per op (parse, write/minify, write/pretty, …) with the documents along x and one bar per
+library; `--by corpus` flips it to one figure per document with the ops along x.
+
+The bench kind is detected from the op names, and only decides wording and the
+`--headline-op` default. Everything visual comes from scripts/_chartlib.py, shared with
+scripts/chart_corpus.
+
+Output names carry the input's stem, so parse_vs and write_vs figures can share one
+directory with chart_corpus's:
+
+    benches/charts/parse_vs-op-parse.gbps.github.png
+    benches/charts/write_vs-headline-twitter.png
+
+Two things the numbers will not tell you:
+
+  * parse_vs's `parse+touch-root` row is simdjson-ondemand doing stage 1 and reading the
+    root type — no materialization. It is not comparable to the `parse` rows and lives in
+    its own group for exactly that reason.
+  * write_vs denominates EVERY op in the INPUT document length, including write/pretty,
+    which emits substantially more than it reads at indent 4. corpus_vs's serialize group
+    divides by emitted bytes instead. Compare write_vs rows against each other, not
+    against a corpus_vs serialize row.
+"""
+
+import argparse
+import os
+import sys
+from collections import OrderedDict
+
+# the script has no .py extension and may be reached through a symlink, so put its own
+# real directory on the path rather than trusting sys.path[0]
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from _chartlib import METRICS, MODES, draw, draw_headline, fmt_size, parse   # noqa: E402
+
+
+# per kind: pretty name, the op the headline defaults to, and the caveat stamped on the
+# --by op figures
+KINDS = {
+    "parse": (
+        "parse",
+        "parse",
+        "GB/s divides by the whole document. parse+touch-root is stage 1 plus a root read, "
+        "not a materialized parse — its own group, not comparable to the rest.",
+    ),
+    "write": (
+        "write",
+        "write/minify",
+        "GB/s divides by the INPUT document, including write/pretty, which emits more than "
+        "it reads. Compare these rows to each other, not to a corpus_vs serialize row.",
+    ),
+}
+
+
+def detect_kind(rows):
+    # write_vs is the only one of the two with a '/' in its op names
+    for r in rows:
+        if r["op"].startswith("write/") or r["op"].startswith("minify/"):
+            return "write"
+    return "parse"
+
+
+def label_rows(rows):
+    """Name each document.
+
+    The bench emits a "### <label> (<n> B)" banner, and _chartlib.parse picks it up. The
+    stored baselines predate the banner and fall back to "<n>B", which reads as noise on
+    an axis — turn those into a human size instead.
+    """
+    for r in rows:
+        if r["corpus"] == f"{r['size']}B":
+            r["corpus"] = fmt_size(r["size"])
+    return rows
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("input", nargs="?", default="-",
+                    help="parse_vs/write_vs output file, or - for stdin")
+    ap.add_argument("--by", choices=("op", "corpus"), default="op",
+                    help="one figure per op group (default) or per document")
+    ap.add_argument("--metric", choices=list(METRICS), default="gbps",
+                    help="which column to plot (default gbps)")
+    ap.add_argument("--all-metrics", action="store_true",
+                    help="emit a figure per segment for every metric")
+    ap.add_argument("--headline", nargs="?", const="", default=None, metavar="CORPUS",
+                    help="the hero figure: GB/s + cyc/op + ins/op side by side for one "
+                         "document (default: the largest one present)")
+    ap.add_argument("--headline-op", default=None,
+                    help="op for --headline (default: parse / write/minify by kind)")
+    ap.add_argument("--mode", choices=MODES, default="light",
+                    help="surface the figure is drawn for (github = Primer dark canvas)")
+    ap.add_argument("--out", default="benches/charts", help="output directory")
+    ap.add_argument("--prefix", default=None,
+                    help="output filename prefix (default: the input file's stem)")
+    args = ap.parse_args()
+
+    text = sys.stdin.read() if args.input == "-" else open(args.input).read()
+    rows = label_rows(parse(text))
+    if not rows:
+        sys.exit("chart_vs: no benchmark rows found — is that parse_vs/write_vs output?")
+
+    kind = detect_kind(rows)
+    name, default_op, note = KINDS[kind]
+    headline_op = args.headline_op or default_op
+
+    stem = "vs" if args.input == "-" else os.path.basename(args.input).split(".")[0]
+    prefix = args.prefix if args.prefix is not None else f"{stem}-"
+
+    os.makedirs(args.out, exist_ok=True)
+
+    if args.headline is not None:
+        # default to the biggest document present: the widest spread between libraries,
+        # and the one a README wants to lead with
+        corpus = args.headline or max(rows, key=lambda r: r["size"])["corpus"]
+        path = draw_headline(
+            rows, corpus, headline_op, args.out, args.mode, prefix=prefix,
+            suptitle_fmt="cjson vs the field — {op} of {corpus}.json  ({size})")
+        if not path:
+            have = sorted({r["corpus"] for r in rows if r["op"] == headline_op})
+            sys.exit(f"chart_vs: no '{headline_op}' rows for '{corpus}'. "
+                     f"present: {', '.join(have) or '(none)'}")
+        print(path)
+        print(f"chart_vs: 1 figure in {args.out}/")
+        return
+
+    # the caveat rides on both groupings, unlike chart_corpus's: it is about how these
+    # two benches count bytes, not about which op group you happen to be looking at
+    if args.by == "op":
+        groups, key, series = OrderedDict(), "corpus", "impl"
+        for r in rows:
+            groups.setdefault(r["op"], []).append(r)
+    else:
+        groups, key, series = OrderedDict(), "op", "impl"
+        for r in rows:
+            groups.setdefault(r["corpus"], []).append(r)
+
+    metrics = list(METRICS) if args.all_metrics else [args.metric]
+    written = []
+    for m in metrics:
+        if m == "gbps" and all(r["gbps"] != r["gbps"] for r in rows):
+            print("chart_vs: input has no GB/s column (pre-8-field layout), skipping")
+            continue
+        written += draw(groups, key, series, m, args.out, f"{prefix}{args.by}-",
+                        args.mode, note,
+                        title_fmt=f"cjson {name} benchmark — {{group}}   ({{metric}})")
+
+    for p in written:
+        print(p)
+    print(f"chart_vs: {len(written)} figure(s) in {args.out}/")
+
+
+if __name__ == "__main__":
+    main()

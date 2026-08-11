@@ -124,12 +124,9 @@ sj_od_claims(void *p, const char *buf, unsigned long n)
   long long exp = 0;
   std::string_view sub;
   bool admin = true;
-  if ( doc["exp"].get(exp) != simdjson::SUCCESS )
-    return 0;
-  if ( doc["sub"].get(sub) != simdjson::SUCCESS )
-    return 0;
-  if ( doc["admin"].get(admin) != simdjson::SUCCESS )
-    return 0;
+  if ( doc["exp"].get(exp) != simdjson::SUCCESS ) return 0;
+  if ( doc["sub"].get(sub) != simdjson::SUCCESS ) return 0;
+  if ( doc["admin"].get(admin) != simdjson::SUCCESS ) return 0;
   return exp + (long long)sub.size() + (admin ? 1 : 0);
 }
 
@@ -139,8 +136,7 @@ long long
 sj_minify(const char *buf, unsigned long n, char *dst)
 {
   size_t out = 0;
-  if ( simdjson::minify(buf, n, dst, out) != simdjson::SUCCESS )
-    return -1;
+  if ( simdjson::minify(buf, n, dst, out) != simdjson::SUCCESS ) return -1;
   return (long long)out;
 }
 
@@ -154,10 +150,8 @@ sj_od_twitter(void *p, const char *buf, unsigned long n)
   unsigned long long id = 0;
   std::string_view name;
   auto first = doc["statuses"].at(0);
-  if ( first["id"].get(id) != simdjson::SUCCESS )
-    return 0;
-  if ( first["user"]["screen_name"].get(name) != simdjson::SUCCESS )
-    return 0;
+  if ( first["id"].get(id) != simdjson::SUCCESS ) return 0;
+  if ( first["user"]["screen_name"].get(name) != simdjson::SUCCESS ) return 0;
   return (long long)(id + name.size());
 }
 

@@ -44,12 +44,27 @@ main()
   mb::pin_cpu0();
   mb::print_header();
 
-  const char *files[] = { "sample/64kb.json", "sample/twitter.json", "sample/1MB.json", "sample/5MB.json" };
+  // labelled like corpus_vs's k_corpora, and for the same reason: the "### <label>
+  // (<n> B)" banner below is what lets scripts/chart_vs put a name on the x axis
+  // instead of a raw byte count
+  struct corpus {
+    const char *path;
+    const char *label;
+  };
 
-  for ( const char *f : files ) {
+  constexpr corpus files[] = {
+    { "sample/64kb.json", "64kb" },
+    { "sample/twitter.json", "twitter" },
+    { "sample/1MB.json", "1MB" },
+    { "sample/5MB.json", "5MB" },
+  };
+
+  for ( const corpus &c : files ) {
     usize n = 0;
-    char *buf = slurp(f, n);
+    char *buf = slurp(c.path, n);
     if ( !buf ) continue;
+
+    micron::io::println("### ", c.label, "  (", n, " B)");
 
     auto rc = cjson::parse(buf, n, cjson::opts{ .with_write_bound = true });
     yyjson_doc *yd = yyjson_read(buf, n, 0);

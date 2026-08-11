@@ -69,6 +69,14 @@ is_exact_cjson(const char *impl) noexcept
   return is_cjson_impl(impl) && impl[5] == '\0';
 }
 
+[[gnu::always_inline]] inline bool
+leads(const row &a, const row *b) noexcept
+{
+  if ( !b ) return true;
+  if ( a.gbps != b->gbps ) return a.gbps > b->gbps;
+  return a.cyc_per_op < b->cyc_per_op;
+}
+
 struct fmt2 {
   u64 whole;
   u32 frac_x100;
@@ -168,6 +176,40 @@ struct line {
   }
 
   void
+  fN(f64 v) noexcept
+  {
+    if ( v < 0 ) v = 0;
+    u32 dec = 2;
+    if ( v > 0.0 )
+      for ( f64 t = v; t < 0.1 && dec < 6; t *= 10.0 ) ++dec;
+
+    u64 unit = 1;
+    for ( u32 i = 0; i < dec; i++ ) unit *= 10;
+    const u64 scaled = static_cast<u64>(v * static_cast<f64>(unit) + 0.5);
+
+    char tmp[24];
+    u32 n = 0;
+    u64 w = scaled / unit;
+    if ( w == 0 )
+      tmp[n++] = '0';
+    else
+      while ( w ) {
+        tmp[n++] = '0' + (w % 10);
+        w /= 10;
+      }
+    while ( n ) buf[pos++] = tmp[--n];
+
+    char frac[8];
+    u64 fr = scaled % unit;
+    for ( u32 i = 0; i < dec; i++ ) {
+      frac[i] = '0' + static_cast<char>(fr % 10);
+      fr /= 10;
+    }
+    buf[pos++] = '.';
+    for ( u32 i = dec; i > 0; i-- ) buf[pos++] = frac[i - 1];
+  }
+
+  void
   s_at(const char *p, u32 end_col) noexcept
   {
     u32 n = 0;
@@ -244,14 +286,13 @@ print_group(const row *rows, u32 n)
   for ( u32 i = 0; i < n; i++ ) {
     const row &r = rows[i];
     if ( is_cjson_impl(r.impl) ) {
-      if ( !best_cjson || r.cyc_per_op < best_cjson->cyc_per_op ) best_cjson = &r;
+      if ( leads(r, best_cjson) ) best_cjson = &r;
     } else {
-      if ( !best_other || r.cyc_per_op < best_other->cyc_per_op ) best_other = &r;
+      if ( leads(r, best_other) ) best_other = &r;
     }
   }
 
-  if ( best_cjson && best_other && best_cjson->cyc_per_op > 0.0 ) {
-    const f64 mult = best_other->cyc_per_op / best_cjson->cyc_per_op;
+  if ( best_cjson && best_other ) {
     line ln;
     ln.s("  -> cjson");
     if ( !is_exact_cjson(best_cjson->impl) ) {
@@ -260,13 +301,21 @@ print_group(const row *rows, u32 n)
       ln.s(")");
     }
     ln.s(" is ");
-    ln.f2(to_fmt2(mult));
-    ln.s("x vs best competitor (");
+    if ( best_other->gbps > 0.0 )
+      ln.fN(best_cjson->gbps / best_other->gbps);
+    else
+      ln.s("n/a");
+    ln.s("x GB/s, ");
+    if ( best_cjson->cyc_per_op > 0.0 )
+      ln.fN(best_other->cyc_per_op / best_cjson->cyc_per_op);
+    else
+      ln.s("n/a");
+    ln.s("x cyc/op vs best competitor (");
     ln.s(best_other->impl);
-    ln.s("), ");
-    ln.f2(to_fmt2(best_cjson->gbps));
+    ln.s(") -- ");
+    ln.fN(best_cjson->gbps);
     ln.s(" vs ");
-    ln.f2(to_fmt2(best_other->gbps));
+    ln.fN(best_other->gbps);
     ln.s(" GB/s");
     micron::io::println(ln.str());
   }

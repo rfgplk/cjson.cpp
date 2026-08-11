@@ -34,3 +34,7 @@ bin/text_source
 bin/fp
 /usr/bin/g++ -std=c++26 -Ofast -fmodulo-sched -fmodulo-sched-allow-regmoves -fgcse-sm -fgcse-las -march=native -m64 -Wall -Wextra -Wpedantic -Wno-variadic-macros -Wno-inline -fstack-protector-all -fstack-clash-protection -fstrict-overflow -fext-numeric-literals -flto=8 -fdiagnostics-color=always -fconcepts-diagnostics-depth=2 tests/oneshot.cpp -lpthread -Iinclude/micron/tests -Iinclude/micron -Iinclude/micron/src -L./libs/ -o bin/oneshot
 bin/oneshot
+/usr/bin/g++ -std=c++26 -Ofast -fmodulo-sched -fmodulo-sched-allow-regmoves -fgcse-sm -fgcse-las -march=native -m64 -Wall -Wextra -Wpedantic -Wno-variadic-macros -Wno-inline -fstack-protector-all -fstack-clash-protection -fstrict-overflow -fext-numeric-literals -flto=8 -fdiagnostics-color=always -fconcepts-diagnostics-depth=2 tests/mutate.cpp -lpthread -Iinclude/micron/tests -Iinclude/micron -Iinclude/micron/src -L./libs/ -o bin/mutate
+bin/mutate
+/usr/bin/g++ -std=c++26 -Ofast -fmodulo-sched -fmodulo-sched-allow-regmoves -fgcse-sm -fgcse-las -march=native -m64 -Wall -Wextra -Wpedantic -Wno-variadic-macros -Wno-inline -fstack-protector-all -fstack-clash-protection -fstrict-overflow -fext-numeric-literals -flto=8 -fdiagnostics-color=always -fconcepts-diagnostics-depth=2 tests/porcelain.cpp -lpthread -Iinclude/micron/tests -Iinclude/micron -Iinclude/micron/src -L./libs/ -o bin/porcelain
+bin/porcelain

@@ -26,6 +26,7 @@
 #include "error.hpp"
 #include "itoa.hpp"
 #include "value.hpp"
+#include "write_simd.hpp"
 
 #include <micron/cmalloc.hpp>
 #include <micron/string/strings.hpp>
@@ -39,66 +40,232 @@ struct style {
   bool ascii_only = false;      // \uXXXX-escape all non-ascii (v1: reserved, not yet applied)
 };
 
+// reusable handrolled buffer
+class wbuf
+{
+  u8 *__p = nullptr;
+  usize __n = 0;        // bytes in use
+  usize __cap = 0;      // bytes owned
+
+public:
+  constexpr wbuf() = default;
+  wbuf(const wbuf &) = delete;
+  wbuf &operator=(const wbuf &) = delete;
+
+  constexpr ~wbuf() { reset(); }
+
+  constexpr wbuf(wbuf &&o) noexcept : __p(o.__p), __n(o.__n), __cap(o.__cap)
+  {
+    o.__p = nullptr;
+    o.__n = 0;
+    o.__cap = 0;
+  }
+
+  constexpr wbuf &
+  operator=(wbuf &&o) noexcept
+  {
+    if ( this != &o ) {
+      reset();
+      __p = o.__p;
+      __n = o.__n;
+      __cap = o.__cap;
+      o.__p = nullptr;
+      o.__n = 0;
+      o.__cap = 0;
+    }
+    return *this;
+  }
+
+  constexpr u8 *
+  data() noexcept
+  {
+    return __p;
+  }
+
+  constexpr const u8 *
+  data() const noexcept
+  {
+    return __p;
+  }
+
+  constexpr usize
+  size() const noexcept
+  {
+    return __n;
+  }
+
+  constexpr usize
+  capacity() const noexcept
+  {
+    return __cap;
+  }
+
+  constexpr bool
+  empty() const noexcept
+  {
+    return __n == 0;
+  }
+
+  constexpr void
+  clear() noexcept
+  {
+    __n = 0;
+  }
+
+  constexpr void
+  reset() noexcept
+  {
+    if ( __p ) {
+      if consteval {
+        delete[] __p;
+      } else {
+        abc::free(__p);
+      }
+    }
+    __p = nullptr;
+    __n = 0;
+    __cap = 0;
+  }
+
+  // grow-only
+  constexpr bool
+  reserve(usize want) noexcept
+  {
+    if ( __p and want <= __cap ) [[likely]]
+      return true;
+    usize ncap = __cap + __cap / 2;
+    if ( ncap < want ) ncap = want;
+    if ( ncap < 256 ) ncap = 256;
+    u8 *np = nullptr;
+    if consteval {
+      np = new u8[ncap]{};
+    } else {
+      np = static_cast<u8 *>(abc::malloc(ncap));
+      if ( !np ) [[unlikely]]
+        return false;
+    }
+    if ( __p ) {
+      if consteval {
+        delete[] __p;
+      } else {
+        abc::free(__p);
+      }
+    }
+    __p = np;
+    __cap = ncap;
+    __n = 0;
+    return true;
+  }
+
+  strv
+  view() const noexcept
+  {
+    return strv{ reinterpret_cast<const char *>(__p), __n };
+  }
+
+  constexpr bytes
+  as_bytes() const noexcept
+  {
+    return bytes{ __p, __n };
+  }
+
+  constexpr void
+  __mark(usize n) noexcept
+  {
+    __n = n;
+  }
+};
+
 };      // namespace cjson
 
 namespace cjson::__write
 {
 
-// escape-emitting string writer (decoded bytes in, json text out)
+constexpr u8 *
+write_escape_one(u8 *w, u8 c) noexcept
+{
+  if ( c == u8('"') or c == u8('\\') ) {
+    w[0] = u8('\\');
+    w[1] = c;
+    return w + 2;
+  }
+  switch ( c ) {
+  case 0x08:
+    w[0] = u8('\\');
+    w[1] = u8('b');
+    return w + 2;
+  case 0x09:
+    w[0] = u8('\\');
+    w[1] = u8('t');
+    return w + 2;
+  case 0x0a:
+    w[0] = u8('\\');
+    w[1] = u8('n');
+    return w + 2;
+  case 0x0c:
+    w[0] = u8('\\');
+    w[1] = u8('f');
+    return w + 2;
+  case 0x0d:
+    w[0] = u8('\\');
+    w[1] = u8('r');
+    return w + 2;
+  default: {
+    w[0] = u8('\\');
+    w[1] = u8('u');
+    w[2] = u8('0');
+    w[3] = u8('0');
+    const u8 hi = c >> 4, lo = c & 0xf;
+    w[4] = u8(hi < 10 ? '0' + hi : 'a' + hi - 10);
+    w[5] = u8(lo < 10 ? '0' + lo : 'a' + lo - 10);
+    return w + 6;
+  }
+  }
+}
+
+[[gnu::always_inline]] constexpr u8 *
+write_escaped_tail(u8 *w, const u8 *s, usize i, usize n) noexcept
+{
+  for ( ; i < n; ++i ) {
+    const u8 c = s[i];
+    if ( c >= 0x20 and c != u8('"') and c != u8('\\') ) {
+      *w++ = c;
+      continue;
+    }
+    w = write_escape_one(w, c);
+  }
+  return w;
+}
+
+[[gnu::noinline]] constexpr u8 *
+write_escaped_blocks(u8 *w, const u8 *s, usize n) noexcept
+{
+  usize i = 0;
+  while ( i + 32 <= n ) {
+    const u32 m = __wscan::esc_mask32<false>(s + i);
+    if ( m == 0 ) [[likely]] {
+      __wscan::copy32(w, s + i);
+      w += 32;
+      i += 32;
+      continue;
+    }
+    const u32 k = u32(__builtin_ctz(m));
+    if ( k != 0 ) {
+      __copy_run(w, s + i, k);
+      w += k;
+      i += k;
+    }
+    w = write_escape_one(w, s[i]);
+    ++i;
+  }
+  return write_escaped_tail(w, s, i, n);
+}
+
 constexpr u8 *
 write_string_escaped(u8 *w, const u8 *s, usize n) noexcept
 {
   *w++ = u8('"');
-  for ( usize i = 0; i < n; ++i ) {
-    const u8 c = s[i];
-    if ( c == u8('"') or c == u8('\\') ) {
-      w[0] = u8('\\');
-      w[1] = c;
-      w += 2;
-    } else if ( c >= 0x20 ) {
-      *w++ = c;
-    } else {
-      // control char: named escape when one exists, else \u00xx
-      switch ( c ) {
-      case 0x08:
-        w[0] = u8('\\');
-        w[1] = u8('b');
-        w += 2;
-        break;
-      case 0x09:
-        w[0] = u8('\\');
-        w[1] = u8('t');
-        w += 2;
-        break;
-      case 0x0a:
-        w[0] = u8('\\');
-        w[1] = u8('n');
-        w += 2;
-        break;
-      case 0x0c:
-        w[0] = u8('\\');
-        w[1] = u8('f');
-        w += 2;
-        break;
-      case 0x0d:
-        w[0] = u8('\\');
-        w[1] = u8('r');
-        w += 2;
-        break;
-      default: {
-        w[0] = u8('\\');
-        w[1] = u8('u');
-        w[2] = u8('0');
-        w[3] = u8('0');
-        const u8 hi = c >> 4, lo = c & 0xf;
-        w[4] = u8(hi < 10 ? '0' + hi : 'a' + hi - 10);
-        w[5] = u8(lo < 10 ? '0' + lo : 'a' + lo - 10);
-        w += 6;
-        break;
-      }
-      }
-    }
-  }
+  w = (n >= 32) ? write_escaped_blocks(w, s, n) : write_escaped_tail(w, s, 0, n);
   *w++ = u8('"');
   return w;
 }
@@ -140,6 +307,15 @@ write_scalar(u8 *w, const value &v, const u8 *pool) noexcept
     if ( st == s_sint ) return __itoa::write_i64(w, v.pay.i);
     return __itoa::write_u64(w, v.pay.u);
   }
+  case kind::raw: {
+    const u8 *s = pool + v.pay.ofs;
+    const u64 n = get_len(v);
+    if ( n <= 64 ) [[likely]]
+      __copy_run(w, s, usize(n));
+    else
+      __copy(w, s, usize(n));
+    return w + n;
+  }
   case kind::boolean:
     if ( (v.tag & s_mask) == s_true ) {
       w[0] = u8('t');
@@ -173,6 +349,9 @@ bound_slots(const value *vals, usize nvals) noexcept
     switch ( get_kind(v) ) {
     case kind::string:
       b += (v.tag & s_mask) == s_noesc ? usize(get_len(v)) + 4 : usize(get_len(v)) * 6 + 4;
+      break;
+    case kind::raw:
+      b += usize(get_len(v)) + 12;
       break;
     case kind::number:
       b += 42;
@@ -336,6 +515,24 @@ write_into(const doc &d, wbytes out, style st = {}) noexcept
   return max_t(end - out.ptr);
 }
 
+constexpr max_t
+write_into(const doc &d, wbuf &out, style st = {}) noexcept
+{
+  if ( !d.alive() ) {
+    out.clear();
+    return fail(error::empty_input);
+  }
+  if ( !out.reserve(write_bound(d, st)) ) [[unlikely]] {
+    out.clear();
+    return fail(error::oom);
+  }
+  u8 *base = out.data();
+  u8 *end = __write::emit(base, d.root().__raw(), d.pool(), st);
+  const usize n = usize(end - base);
+  out.__mark(n);
+  return max_t(n);
+}
+
 inline micron::string
 write_str(const doc &d, style st = {})
 {
@@ -359,6 +556,68 @@ write(const doc &d, style st = {})
     return out;
   }
   u8 *end = __write::emit(out.first(), d.root().__raw(), d.pool(), st);
+  out.mark(usize(end - out.first()));
+  return out;
+}
+
+constexpr usize
+write_bound(val v, style st = {}) noexcept
+{
+  if ( !v ) return 0;
+  const value *r = v.__raw();
+  return __write::bound_slots(r, usize(get_next(r) - r)) + __write::pretty_extra(r, st.indent);
+}
+
+constexpr max_t
+write_into(val v, wbytes out, style st = {}) noexcept
+{
+  if ( !v ) return fail(error::empty_input);
+  if ( out.len < write_bound(v, st) ) return fail(error::short_output);
+  u8 *end = __write::emit(out.ptr, v.__raw(), v.__owner()->pool(), st);
+  return max_t(end - out.ptr);
+}
+
+constexpr max_t
+write_into(val v, wbuf &out, style st = {}) noexcept
+{
+  if ( !v ) {
+    out.clear();
+    return fail(error::empty_input);
+  }
+  if ( !out.reserve(write_bound(v, st)) ) [[unlikely]] {
+    out.clear();
+    return fail(error::oom);
+  }
+  u8 *base = out.data();
+  u8 *end = __write::emit(base, v.__raw(), v.__owner()->pool(), st);
+  const usize n = usize(end - base);
+  out.__mark(n);
+  return max_t(n);
+}
+
+inline micron::string
+write_str(val v, style st = {})
+{
+  micron::string s{};
+  if ( !v ) return s;
+  const usize cap = write_bound(v, st);
+  s.reserve(cap + 1);
+  u8 *base = reinterpret_cast<u8 *>(s.data());
+  u8 *end = __write::emit(base, v.__raw(), v.__owner()->pool(), st);
+  s.set_size(usize(end - base));
+  return s;
+}
+
+inline fjson
+write(val v, style st = {})
+{
+  const usize cap = write_bound(v, st);
+  fjson out(fjson::__uninit_t{}, cap ? cap : 1);
+  if ( !v ) {
+    out.mark(0);
+    return out;
+  }
+  u8 *end = __write::emit(out.first(), v.__raw(), v.__owner()->pool(), st);
   out.mark(usize(end - out.first()));
   return out;
 }

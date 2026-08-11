@@ -77,10 +77,12 @@ template<usize N> struct str {
 namespace __ct
 {
 
+[[noreturn]] void __ct_fail(const char *what) noexcept;
+
 consteval void
 require(bool ok, const char *what)
 {
-  if ( !ok ) throw what;      // consteval throw == compile error carrying the message
+  if ( !ok ) __ct_fail(what);
 }
 
 };      // namespace __ct

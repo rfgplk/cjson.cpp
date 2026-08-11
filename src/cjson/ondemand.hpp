@@ -102,6 +102,17 @@ class cur
     return true;
   }
 
+  constexpr strv
+  __span() const noexcept
+  {
+    const u8 c = tok();
+    if ( c != u8('{') and c != u8('[') ) return strv{};
+    max_t e = __k;
+    if ( !skip(e) or e <= __k ) return strv{};
+    const usize open = idx()[__k], close = idx()[e - 1];
+    return strv{ reinterpret_cast<const char *>(base()) + open, close + 1 - open };
+  }
+
 public:
   ~cur() = default;
 
@@ -253,37 +264,42 @@ public:
     return f64(v.pay.u);
   }
 
-  constexpr
   operator cjson::pun()
   {
     value v{};
     switch ( peek_kind() ) {
     case cjson::kind::null:
-      return {};
+      return cjson::pun{ micron::tag<jnull>{} };
     case cjson::kind::boolean:
       return bool_or();
     case cjson::kind::number: {
       if ( __num::read_number(base(), input_len(), idx()[__k], v) < 0 ) return u64(0);
       const u64 st = v.tag & s_mask;
-      if ( st == s_sint ) return v.pay.i >= 0 ? u64(v.pay.i) : u64(0);
-      if ( st == s_uint ) return i64(v.pay.u);
-      if ( st == s_real ) return v.pay.f;
-      if ( st == s_sint ) return f64(v.pay.i);
-      return u64(0);
+      if ( st == s_uint ) return v.pay.u;      // u64
+      if ( st == s_sint ) return v.pay.i;      // i64
+      if ( st == s_real ) return v.pay.f;      // f64
+      return u64(0);                           // unreachable: only three number subtypes
     }
     case cjson::kind::string: {
+      // escapes __NOT__ decoded
       auto t = str_raw();
       micron::string s{};
       s.append(t.ptr, t.len);
       return s;
     }
-      // TODO: add these
     case cjson::kind::array:
     case cjson::kind::object:
-    case cjson::kind::raw:
+      return jraw{ __span() };
     default:
-      return {};
+      return {};      // kind::none -> valueless
     }
+  }
+
+  result<cjson::pun>
+  try_pun()
+  {
+    if ( !*this ) return result<cjson::pun>{ micron::tag<error>{}, error::no_such_field };
+    return result<cjson::pun>{ cjson::pun(*this) };
   }
 
   constexpr bool

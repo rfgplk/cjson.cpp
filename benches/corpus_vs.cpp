@@ -14,7 +14,10 @@
 //   parse      full dom materialization, every contender, copy mode
 //   extract    one rfc 6901 pointer, however the library likes to reach it — the lazy
 //              paths (cjson-ondemand, simdjson-ondemand, glaze-lazy) are doing
-//              genuinely less work than the dom ones, so they print in their own group
+//              genuinely less work than the dom ones, so they print in their own group,
+//              and inside that group GB/s divides by the bytes each contender actually
+//              reads: glaze's walk stops at the pointer, cjson and simdjson index the
+//              whole buffer. It is a scan rate, not a race — cyc/op is the race
 //   serialize  dom -> minified text, off a document parsed once outside the timer
 //
 // Corpora absent from disk are skipped silently: run scripts/fetch_corpus to populate
@@ -74,6 +77,7 @@ int gl_load(void *, const char *, unsigned long);
 long long gl_serialize(void *);
 long long gl_validate(const char *, unsigned long);
 long long gl_extract(void *, const char *, unsigned long, const char *);
+long long gl_extract_reach(void *, const char *, unsigned long, const char *);
 };
 
 namespace
@@ -314,6 +318,15 @@ main(int argc, char **argv)
       const bool ok_nl = agrees("nlohmann", got_nl);
 
       {
+        // GB/s denominated PER CONTENDER in the bytes that contender actually reads,
+        // because on this group they genuinely do not read the same thing. cjson's
+        // iterate and simdjson's stage 1 both index the whole buffer, so n is what they
+        // read. glaze's walk stops at the value the pointer names — charging it n
+        // credited it a document it never touched, which is how a 636 cyc/op row over
+        // 8.6 MB came out as "3841.68 GB/s". The column is a scan rate; cyc/op is the
+        // one that answers which library resolves the query first.
+        const u64 gl_bytes = ok_gl ? u64(gl_extract_reach(gl, buf, n, c.ptr)) : 0;
+
         mb::row g[3];
         u32 k = 0;
         g[k++] = mb::bench_one("extract-lazy", "cjson-ondemand", n, n, [&] { mb::sink_size(usize(cj_extract(in, c.ptr, od_sc))); }, cap);
@@ -321,7 +334,13 @@ main(int argc, char **argv)
           g[k++] = mb::bench_one(
               "extract-lazy", "simdjson-ondemand", n, n, [&] { mb::sink_size(usize(sj_od_extract(sj_od, buf, n, c.ptr))); }, cap);
         if ( ok_gl )
-          g[k++] = mb::bench_one("extract-lazy", "glaze-lazy", n, n, [&] { mb::sink_size(usize(gl_extract(gl, buf, n, c.ptr))); }, cap);
+          // reps_cap on the BYTES READ, not on n: the cap exists to stop the harness
+          // spending forever on an op that costs O(document), and glaze's walk does not.
+          // Capping it by n pinned semanticscholar's 644 cyc/op row to 16 reps, few
+          // enough that the perf ioctls around the loop outweighed the loop.
+          g[k++] = mb::bench_one(
+              "extract-lazy", "glaze-lazy", n, gl_bytes ? gl_bytes : n, [&] { mb::sink_size(usize(gl_extract(gl, buf, n, c.ptr))); },
+              gl_bytes ? reps_cap(gl_bytes) : cap);
         mb::print_group(g, k);
       }
 
@@ -362,17 +381,28 @@ main(int argc, char **argv)
 
       if ( rc.is_first() && yd ) {
         const cjson::doc &cd = rc.cast<cjson::doc>();
-        mb::row g[6];
+        // GB/s denominated in EMITTED bytes, uniformly for every contender: they all
+        // produce the same minified text, so the ratios are untouched and the absolute
+        // number finally means "serialization throughput" rather than "input bytes/s"
+        const usize ob = cjson::write(cd).size();
+        mb::row g[7];
         u32 k = 0;
         g[k++] = mb::bench_one(
-            "serialize", "cjson", n, n,
+            "serialize", "cjson", n, ob,
             [&] {
               cjson::fjson o = cjson::write(cd);
               mb::sink_size(o.size());
             },
             cap);
+        // apples-to-apples with glaze/rapidjson/boost/nlohmann, which all serialize into a
+        // retained buffer. the row above pays a fresh mmap + first-touch fault storm per
+        // rep; this one does not, and that difference is ~2.2x of wall clock on 5MB
+        {
+          static cjson::wbuf warm;
+          g[k++] = mb::bench_one("serialize", "cjson-reuse", n, ob, [&] { mb::sink_size(usize(cjson::write_into(cd, warm))); }, cap);
+        }
         g[k++] = mb::bench_one(
-            "serialize", "yyjson", n, n,
+            "serialize", "yyjson", n, ob,
             [&] {
               usize len = 0;
               char *s = yyjson_write(yd, 0, &len);
@@ -380,10 +410,10 @@ main(int argc, char **argv)
               std::free(s);
             },
             cap);
-        if ( rj_ok ) g[k++] = mb::bench_one("serialize", "rapidjson", n, n, [&] { mb::sink_size(usize(rj_serialize(rj))); }, cap);
-        if ( gl_ok ) g[k++] = mb::bench_one("serialize", "glaze", n, n, [&] { mb::sink_size(usize(gl_serialize(gl))); }, cap);
-        if ( bj_ok ) g[k++] = mb::bench_one("serialize", "boost.json", n, n, [&] { mb::sink_size(usize(bj_serialize(bj))); }, cap);
-        if ( nl_ok ) g[k++] = mb::bench_one("serialize", "nlohmann", n, n, [&] { mb::sink_size(usize(nl_serialize(nl))); }, cap);
+        if ( rj_ok ) g[k++] = mb::bench_one("serialize", "rapidjson", n, ob, [&] { mb::sink_size(usize(rj_serialize(rj))); }, cap);
+        if ( gl_ok ) g[k++] = mb::bench_one("serialize", "glaze", n, ob, [&] { mb::sink_size(usize(gl_serialize(gl))); }, cap);
+        if ( bj_ok ) g[k++] = mb::bench_one("serialize", "boost.json", n, ob, [&] { mb::sink_size(usize(bj_serialize(bj))); }, cap);
+        if ( nl_ok ) g[k++] = mb::bench_one("serialize", "nlohmann", n, ob, [&] { mb::sink_size(usize(nl_serialize(nl))); }, cap);
         mb::print_group(g, k);
       }
       if ( yd ) yyjson_doc_free(yd);

@@ -38,6 +38,7 @@ namespace cjson
 
 class val;
 struct scratch;
+class mut;
 struct member;
 struct arr_iter;
 struct obj_iter;
@@ -54,14 +55,18 @@ class doc
 {
   value *__vals = nullptr;
   usize __nvals = 0;
+  usize __vcap = 0;      // owned slot capacity; 0 while borrowed (mutation only)
   u8 *__pool = nullptr;
-  const u8 *__alias = nullptr;      // insitu mode: the caller's buffer
-  usize __pcap = 0;                 // allocation size of the pool (text + padding)
+  u8 *__alias = nullptr;      // insitu mode: the caller's buffer
+  usize __pcap = 0;           // allocation size of the pool (text + padding)
+  usize __plen = 0;           // pool bytes in use; the bump watermark for appends
   usize __consumed = 0;
-  wbounds __wb{};               // zero flat => predates the accumulators; writer falls back to the walks
+  wbounds __wb{};      // zero flat => predates the accumulators; writer falls back to the walks
+  error __merr = error::ok;
   bool __borrowed = false;      // pool and vals belong to a scratch; release() must not free them
 
   friend class val;
+  friend class mut;
   friend result<doc> parse(bytes, opts, scratch &) noexcept;
   friend constexpr max_t __parse_into(doc &, bytes, opts, scratch &) noexcept;
   friend constexpr max_t __parse_insitu_into(doc &, wbytes, opts, scratch &) noexcept;
@@ -76,15 +81,18 @@ public:
   doc &operator=(const doc &) = delete;
 
   constexpr doc(doc &&o) noexcept
-      : __vals(o.__vals), __nvals(o.__nvals), __pool(o.__pool), __alias(o.__alias), __pcap(o.__pcap), __consumed(o.__consumed),
-        __wb(o.__wb), __borrowed(o.__borrowed)
+      : __vals(o.__vals), __nvals(o.__nvals), __vcap(o.__vcap), __pool(o.__pool), __alias(o.__alias), __pcap(o.__pcap), __plen(o.__plen),
+        __consumed(o.__consumed), __wb(o.__wb), __merr(o.__merr), __borrowed(o.__borrowed)
   {
     o.__vals = nullptr;
     o.__nvals = 0;
+    o.__vcap = 0;
     o.__pool = nullptr;
     o.__alias = nullptr;
     o.__pcap = 0;
+    o.__plen = 0;
     o.__wb = wbounds{};
+    o.__merr = error::ok;
     o.__borrowed = false;
   }
 
@@ -94,18 +102,24 @@ public:
     release();
     __vals = o.__vals;
     __nvals = o.__nvals;
+    __vcap = o.__vcap;
     __pool = o.__pool;
     __alias = o.__alias;
     __pcap = o.__pcap;
+    __plen = o.__plen;
     __consumed = o.__consumed;
     __wb = o.__wb;
+    __merr = o.__merr;
     __borrowed = o.__borrowed;
     o.__vals = nullptr;
     o.__nvals = 0;
+    o.__vcap = 0;
     o.__pool = nullptr;
     o.__alias = nullptr;
     o.__pcap = 0;
+    o.__plen = 0;
     o.__wb = wbounds{};
+    o.__merr = error::ok;
     o.__borrowed = false;
     return *this;
   }
@@ -124,9 +138,13 @@ public:
     }
     __vals = nullptr;
     __pool = nullptr;
+    __alias = nullptr;
     __nvals = 0;
+    __vcap = 0;
     __pcap = 0;
+    __plen = 0;
     __wb = wbounds{};
+    __merr = error::ok;
     __borrowed = false;
   }
 
@@ -167,7 +185,185 @@ public:
     return __pool ? __pool : __alias;
   }
 
+  // %%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  // mutations
+
+  constexpr error
+  mut_error() const noexcept
+  {
+    return __merr;
+  }
+
+  constexpr void
+  clear_mut_error() noexcept
+  {
+    __merr = error::ok;
+  }
+
+private:
+  constexpr u8 *
+  __pool_w() noexcept
+  {
+    return __pool ? __pool : __alias;
+  }
+
+  constexpr void
+  __wb_invalidate() noexcept
+  {
+    __wb = wbounds{};
+  }
+
+  constexpr void
+  __wb_swap(u64 before, u64 after) noexcept
+  {
+    if ( __wb.flat == 0 ) return;
+    __wb.flat = __wb.flat - before + after;
+  }
+
+  constexpr void
+  __free_pool_block(u8 *p) noexcept
+  {
+    if ( !p ) return;
+    if consteval {
+      delete[] p;
+    } else {
+      abc::free(p);
+    }
+  }
+
+  constexpr bool
+  __detach(usize pool_need, usize vals_extra) noexcept
+  {
+    const bool want_pool = __pool != nullptr or pool_need != 0;
+    usize npcap = 0;
+    if ( want_pool ) {
+      npcap = __pcap + __pcap / 2;
+      if ( npcap < __plen + pool_need ) npcap = __plen + pool_need;
+      if ( npcap < 256 ) npcap = 256;
+    }
+    usize nvcap = __vcap + __vcap / 2;
+    if ( nvcap < __nvals + vals_extra ) nvcap = __nvals + vals_extra;
+    if ( nvcap < 16 ) nvcap = 16;
+    u8 *np = nullptr;
+    value *ns = nullptr;
+    if consteval {
+      if ( want_pool ) np = new u8[npcap]{};
+      ns = new value[nvcap]{};
+    } else {
+      if ( want_pool ) {
+        np = static_cast<u8 *>(abc::malloc(npcap));
+        if ( !np ) [[unlikely]] {
+          __merr = error::oom;
+          return false;
+        }
+      }
+      ns = static_cast<value *>(abc::malloc(nvcap * sizeof(value)));
+      if ( !ns ) [[unlikely]] {
+        if ( np ) abc::free(np);
+        __merr = error::oom;
+        return false;
+      }
+    }
+    if ( want_pool and __plen ) __copy(np, pool(), __plen);
+    if ( __vals and __nvals ) micron::memcpy(ns, __vals, __nvals);
+    if ( want_pool ) {
+      __pool = np;
+      __alias = nullptr;
+      __pcap = npcap;
+    }
+    __vals = ns;
+    __vcap = nvcap;
+    __borrowed = false;
+    return true;
+  }
+
+  constexpr bool
+  __own_pool(usize need, u8 **stale) noexcept
+  {
+    *stale = nullptr;
+    if ( __borrowed ) return __detach(need, 0);
+    if ( __pool and __plen + need <= __pcap ) [[likely]]
+      return true;
+    usize ncap = __pcap + __pcap / 2;
+    if ( ncap < __plen + need ) ncap = __plen + need;
+    if ( ncap < 256 ) ncap = 256;
+    u8 *np = nullptr;
+    if consteval {
+      np = new u8[ncap]{};
+    } else {
+      np = static_cast<u8 *>(abc::malloc(ncap));
+      if ( !np ) [[unlikely]] {
+        __merr = error::oom;
+        return false;
+      }
+    }
+    if ( __plen ) __copy(np, pool(), __plen);
+    *stale = __pool;
+    __pool = np;
+    __alias = nullptr;
+    __pcap = ncap;
+    return true;
+  }
+
+  constexpr bool
+  __own_vals(usize extra) noexcept
+  {
+    if ( __borrowed ) return __detach(0, extra);
+    const usize need = __nvals + extra;
+    if ( __vals and need <= __vcap ) [[likely]]
+      return true;
+    usize ncap = __vcap + __vcap / 2;
+    if ( ncap < need ) ncap = need;
+    if ( ncap < 16 ) ncap = 16;
+    value *ns = nullptr;
+    if consteval {
+      ns = new value[ncap]{};
+    } else {
+      ns = static_cast<value *>(abc::malloc(ncap * sizeof(value)));
+      if ( !ns ) [[unlikely]] {
+        __merr = error::oom;
+        return false;
+      }
+    }
+    if ( __vals and __nvals ) micron::memcpy(ns, __vals, __nvals);
+    if ( __vals ) {
+      if consteval {
+        delete[] __vals;
+      } else {
+        abc::free(__vals);
+      }
+    }
+    __vals = ns;
+    __vcap = ncap;
+    return true;
+  }
+
+  static constexpr u64 __pool_fail = u64(-1);
+
+  constexpr u64
+  __pool_put(const char *s, usize n) noexcept
+  {
+    u8 *stale = nullptr;
+    if ( !__own_pool(n + 1, &stale) ) return __pool_fail;
+    const usize at = __plen;
+    for ( usize i = 0; i < n; ++i ) __pool[at + i] = u8(s[i]);
+    __pool[at + n] = 0;
+    __plen = at + n + 1;
+    __free_pool_block(stale);
+    return u64(at);
+  }
+
+public:
   constexpr val root() const noexcept;
+
+  constexpr val operator[](strv key) const noexcept;
+  constexpr val operator[](const char *key) const noexcept;
+  constexpr val operator[](usize i) const noexcept;
+
+  constexpr mut edit() noexcept;
+  constexpr mut operator[](strv key) noexcept;
+  constexpr mut operator[](const char *key) noexcept;
+  constexpr mut operator[](usize i) noexcept;
 };
 
 namespace __doc
@@ -202,12 +398,23 @@ class val
   const doc *__d = nullptr;
   const value *__v = nullptr;
 
+  friend class mut;
+
+protected:
+  constexpr const doc *
+  __docp() const noexcept
+  {
+    return __d;
+  }
+
 public:
   ~val() = default;
 
   constexpr val() = default;
 
   constexpr val(const doc *d, const value *v) noexcept : __d(d), __v(v) { }
+
+  constexpr explicit val(vref r) noexcept : __d(r.d), __v(r.v) { }
 
   constexpr kind
   type() const noexcept
@@ -238,35 +445,53 @@ public:
     }
   }
 
-  constexpr
   operator cjson::pun()
   {
     switch ( type() ) {
     case cjson::kind::null:
-      return {};
+      return cjson::pun{ micron::tag<jnull>{} };
     case cjson::kind::boolean:
       return (__v->tag & s_mask) == s_true;
     case cjson::kind::number: {
       const u64 st = __v->tag & s_mask;
-      if ( st == s_sint ) return __v->pay.i >= 0 ? u64(__v->pay.i) : u64(0);
-      if ( st == s_uint ) return i64(__v->pay.u);
-      if ( st == s_real ) return __v->pay.f;
-      if ( st == s_sint ) return f64(__v->pay.i);
+      if ( st == s_uint ) return __v->pay.u;      // u64
+      if ( st == s_sint ) return __v->pay.i;      // i64
+      if ( st == s_real ) return __v->pay.f;      // f64
       return u64(0);
     }
     case cjson::kind::string: {
-      strv t{ reinterpret_cast<const char *>(__d->pool() + __v->pay.ofs), usize(get_len(*__v)) };
+      const strv t = str_or();
       micron::string s{};
       s.append(t.ptr, t.len);
       return s;
     }
+    case cjson::kind::raw:
+      return jraw{ raw_str() };
     case cjson::kind::array:
     case cjson::kind::object:
-    case cjson::kind::raw:
-      return __v;
+      return vref{ __d, __v };
     default:
       return {};
     }
+  }
+
+  result<cjson::pun>
+  try_pun()
+  {
+    if ( !*this ) return result<cjson::pun>{ micron::tag<error>{}, error::no_such_field };
+    return result<cjson::pun>{ cjson::pun(*this) };
+  }
+
+  constexpr vref
+  __ref() const noexcept
+  {
+    return vref{ __d, __v };
+  }
+
+  constexpr const doc *
+  __owner() const noexcept
+  {
+    return __d;
   }
 
   constexpr explicit
@@ -509,6 +734,36 @@ constexpr val
 doc::root() const noexcept
 {
   return alive() ? val{ this, __vals } : val{};
+}
+
+constexpr val
+doc::operator[](strv key) const noexcept
+{
+  return root()[key];
+}
+
+constexpr val
+doc::operator[](const char *key) const noexcept
+{
+  return root()[key];
+}
+
+constexpr val
+doc::operator[](usize i) const noexcept
+{
+  return root()[i];
+}
+
+constexpr val
+as_val(vref r) noexcept
+{
+  return val{ r };
+}
+
+constexpr vref
+as_vref(val v) noexcept
+{
+  return v.__ref();
 }
 
 struct member {
