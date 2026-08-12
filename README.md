@@ -138,6 +138,12 @@ taskset -c 0 ./bin/corpus_vs`, and graph it with `scripts/chart_corpus` (`--mode
 
 **cyc/op, lower is better, log scale.**
 
+Each x position is **N fields resolved from one document handle** on `sample/twitter.json`
+(632 KB, 100 records), N from 1 to 64; an index is amortized while a walk is computed N times.
+
+At **N=1** glz::lazy_json` touches **204 of 631,659 bytes (0.03%)** and returns, whereas cjson's `iterate` 
+reads and validates all of them.
+
 Reproduce with `scripts/vsbuild benches/lazy_vs.cpp && taskset -c 0 ./bin/lazy_vs`, and
 graph it with `scripts/chart_vs benches/results/lazy_vs.txt --metric cyc --mode github`.
 
