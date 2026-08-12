@@ -78,6 +78,8 @@ long long gl_serialize(void *);
 long long gl_validate(const char *, unsigned long);
 long long gl_extract(void *, const char *, unsigned long, const char *);
 long long gl_extract_reach(void *, const char *, unsigned long, const char *);
+long long gl_lazy_extract(void *, const char *, unsigned long, const char *);
+long long gl_lazy_extract_reach(void *, const char *, unsigned long, const char *);
 };
 
 namespace
@@ -301,6 +303,7 @@ main(int argc, char **argv)
       const long long got_od = cj_extract_dom(in, c.ptr, dom_sc);
       const long long got_sj = sj_od_extract(sj_od, buf, n, c.ptr);
       const long long got_gl = gl_extract(gl, buf, n, c.ptr);
+      const long long got_gl_lz = gl_lazy_extract(gl, buf, n, c.ptr);
       const long long got_rj = rj_extract(rj, buf, n, c.ptr);
       const long long got_bj = bj_extract(bj, buf, n, c.ptr);
       const long long got_nl = nl_extract(nl, buf, n, c.ptr);
@@ -313,6 +316,7 @@ main(int argc, char **argv)
       const bool ok_dom = agrees("cjson-dom", got_od);
       const bool ok_sj = agrees("simdjson-ondemand", got_sj);
       const bool ok_gl = agrees("glaze-lazy", got_gl);
+      const bool ok_gl_lz = agrees("glaze-lazyjson", got_gl_lz);
       const bool ok_rj = agrees("rapidjson", got_rj);
       const bool ok_bj = agrees("boost.json", got_bj);
       const bool ok_nl = agrees("nlohmann", got_nl);
@@ -326,8 +330,9 @@ main(int argc, char **argv)
         // 8.6 MB came out as "3841.68 GB/s". The column is a scan rate; cyc/op is the
         // one that answers which library resolves the query first.
         const u64 gl_bytes = ok_gl ? u64(gl_extract_reach(gl, buf, n, c.ptr)) : 0;
+        const u64 gl_lz_bytes = ok_gl_lz ? u64(gl_lazy_extract_reach(gl, buf, n, c.ptr)) : 0;
 
-        mb::row g[3];
+        mb::row g[4];
         u32 k = 0;
         g[k++] = mb::bench_one("extract-lazy", "cjson-ondemand", n, n, [&] { mb::sink_size(usize(cj_extract(in, c.ptr, od_sc))); }, cap);
         if ( ok_sj )
@@ -341,6 +346,15 @@ main(int argc, char **argv)
           g[k++] = mb::bench_one(
               "extract-lazy", "glaze-lazy", n, gl_bytes ? gl_bytes : n, [&] { mb::sink_size(usize(gl_extract(gl, buf, n, c.ptr))); },
               gl_bytes ? reps_cap(gl_bytes) : cap);
+        if ( ok_gl_lz )
+          // glz::lazy_json, which is NOT what the row above measures: get_view_json is
+          // stateless, lazy_json hands back a document whose views carry a cursor. On
+          // ONE pointer the two do the same walk and this row exists to show that they
+          // cost the same; the cursor only pays for itself across several reads of one
+          // buffer, which is what benches/lazy_vs.cpp sweeps.
+          g[k++] = mb::bench_one(
+              "extract-lazy", "glaze-lazyjson", n, gl_lz_bytes ? gl_lz_bytes : n,
+              [&] { mb::sink_size(usize(gl_lazy_extract(gl, buf, n, c.ptr))); }, gl_lz_bytes ? reps_cap(gl_lz_bytes) : cap);
         mb::print_group(g, k);
       }
 

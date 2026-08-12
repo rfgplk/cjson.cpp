@@ -11,6 +11,55 @@
 
 #include <simdjson.h>
 
+namespace
+{
+
+// the per-kind number every contender in the extract groups returns for the same
+// pointer: numbers by value, strings by length, bools 1/2, containers by element count,
+// 0 on any miss or error. factored out of sj_od_extract so the n-field row below cannot
+// drift from the one-shot row it is supposed to extend.
+long long
+od_checksum(simdjson::ondemand::value val)
+{
+  simdjson::ondemand::json_type t;
+  if ( val.type().get(t) != simdjson::SUCCESS ) return 0;
+  switch ( t ) {
+  case simdjson::ondemand::json_type::number: {
+    double d;
+    if ( val.get_double().get(d) != simdjson::SUCCESS ) return 0;
+    return (long long)d;
+  }
+  case simdjson::ondemand::json_type::string: {
+    std::string_view sv;
+    if ( val.get_string().get(sv) != simdjson::SUCCESS ) return 0;
+    return (long long)sv.size();
+  }
+  case simdjson::ondemand::json_type::boolean: {
+    bool b;
+    if ( val.get_bool().get(b) != simdjson::SUCCESS ) return 0;
+    return b ? 1 : 2;
+  }
+  case simdjson::ondemand::json_type::array: {
+    simdjson::ondemand::array a;
+    if ( val.get_array().get(a) != simdjson::SUCCESS ) return 0;
+    size_t c = 0;
+    if ( a.count_elements().get(c) != simdjson::SUCCESS ) return 0;
+    return (long long)c;
+  }
+  case simdjson::ondemand::json_type::object: {
+    simdjson::ondemand::object o;
+    if ( val.get_object().get(o) != simdjson::SUCCESS ) return 0;
+    size_t c = 0;
+    if ( o.count_fields().get(c) != simdjson::SUCCESS ) return 0;
+    return (long long)c;
+  }
+  default:
+    return 0;
+  }
+}
+
+};      // namespace
+
 extern "C" {
 
 void *
@@ -52,42 +101,31 @@ sj_od_extract(void *p, const char *buf, unsigned long n, const char *ptr)
     return 1;
   }
   if ( doc.at_pointer(ptr).get(val) != simdjson::SUCCESS ) return 0;
+  return od_checksum(val);
+}
 
-  simdjson::ondemand::json_type t;
-  if ( val.type().get(t) != simdjson::SUCCESS ) return 0;
-  switch ( t ) {
-  case simdjson::ondemand::json_type::number: {
-    double d;
-    if ( val.get_double().get(d) != simdjson::SUCCESS ) return 0;
-    return (long long)d;
+// N pointers against ONE iterate: the sweep row (benches/lazy_vs.cpp). simdjson pays
+// stage 1 once here and then walks the value tree per pointer, which is the same deal
+// cjson's iterate + N at_pointer gets, so the two are directly comparable.
+//
+// Repeated at_pointer on one document is legal and needs no ordering care: ondemand's
+// document::at_pointer calls rewind() on entry, so each pointer restarts the CURSOR from
+// the document root while the structural index built by iterate() is kept. It is the
+// index that is amortized, not the walk. (A forward-only ondemand::value would raise
+// OUT_OF_ORDER_ITERATION on a rewind; the document overload is the one that does not.)
+long long
+sj_od_nfields(void *p, const char *buf, unsigned long n, const char *const *ptrs, int count)
+{
+  auto *parser = static_cast<simdjson::ondemand::parser *>(p);
+  simdjson::padded_string_view v(buf, n, n + simdjson::SIMDJSON_PADDING);
+  auto doc = parser->iterate(v);
+  long long sum = 0;
+  for ( int i = 0; i < count; i++ ) {
+    simdjson::ondemand::value val;
+    if ( doc.at_pointer(ptrs[i]).get(val) != simdjson::SUCCESS ) continue;
+    sum += od_checksum(val);
   }
-  case simdjson::ondemand::json_type::string: {
-    std::string_view sv;
-    if ( val.get_string().get(sv) != simdjson::SUCCESS ) return 0;
-    return (long long)sv.size();
-  }
-  case simdjson::ondemand::json_type::boolean: {
-    bool b;
-    if ( val.get_bool().get(b) != simdjson::SUCCESS ) return 0;
-    return b ? 1 : 2;
-  }
-  case simdjson::ondemand::json_type::array: {
-    simdjson::ondemand::array a;
-    if ( val.get_array().get(a) != simdjson::SUCCESS ) return 0;
-    size_t c = 0;
-    if ( a.count_elements().get(c) != simdjson::SUCCESS ) return 0;
-    return (long long)c;
-  }
-  case simdjson::ondemand::json_type::object: {
-    simdjson::ondemand::object o;
-    if ( val.get_object().get(o) != simdjson::SUCCESS ) return 0;
-    size_t c = 0;
-    if ( o.count_fields().get(c) != simdjson::SUCCESS ) return 0;
-    return (long long)c;
-  }
-  default:
-    return 0;
-  }
+  return sum;
 }
 
 void *

@@ -78,6 +78,7 @@ IMPL_SLOT = {
     "cjson-handloop": 2,
     "cjson-fp": 1,
     "cjson-items": 0,
+    "cjson-cursor": 0,
     "cjson-at-indexed": 3,
     "cjson-index-only": 2,
     "yyjson": 2,              # aqua
@@ -88,6 +89,8 @@ IMPL_SLOT = {
     "rapidjson": 4,           # magenta
     "glaze": 5,               # green
     "glaze-lazy": 5,
+    "glaze-lazyjson": 5,
+    "glaze-getview": 5,
     "boost.json": 6,          # violet
     "nlohmann": 7,            # red
 }

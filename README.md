@@ -129,6 +129,18 @@ mode. `cjson-reuse` borrows a warm scratch; plain `cjson` allocates and frees pe
 Reproduce with `scripts/fetch_corpus && scripts/vsbuild benches/corpus_vs.cpp &&
 taskset -c 0 ./bin/corpus_vs`, and graph it with `scripts/chart_corpus` (`--mode github`
 
+##### Lazy extraction
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="benches/charts/lazy_vs-corpus-twitter.cyc.github.png">
+  <img alt="cjson on-demand vs glz::lazy_json, glz::get_view_json, simdjson on-demand and yyjson -- N fields resolved from one document handle, cycles per op" src="benches/charts/lazy_vs-corpus-twitter.cyc.github.png">
+</picture>
+
+**cyc/op, lower is better, log scale.**
+
+Reproduce with `scripts/vsbuild benches/lazy_vs.cpp && taskset -c 0 ./bin/lazy_vs`, and
+graph it with `scripts/chart_vs benches/results/lazy_vs.txt --metric cyc --mode github`.
+
 ------
 
 ##### API

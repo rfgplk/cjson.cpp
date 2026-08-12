@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
-"""Turn parse_vs / write_vs output into charts, in the same style as chart_corpus.
+"""Turn parse_vs / write_vs / lazy_vs output into charts, in the same style as chart_corpus.
 
     scripts/vsbuild benches/parse_vs.cpp
     taskset -c 0 ./bin/parse_vs > benches/results/parse_vs.txt
     scripts/chart_vs benches/results/parse_vs.txt                  # one per op group
     scripts/chart_vs benches/results/write_vs.txt --mode github
     scripts/chart_vs benches/results/parse_vs.txt --headline twitter
+    scripts/chart_vs benches/results/lazy_vs.txt --metric cyc --mode github
 
-Same row layout as corpus_vs, different axes: these two benches sweep one op vocabulary
+Same row layout as corpus_vs, different axes: these benches sweep one op vocabulary
 across a handful of documents rather than a wide corpus. So the default figure is one
 per op (parse, write/minify, write/pretty, …) with the documents along x and one bar per
 library; `--by corpus` flips it to one figure per document with the ops along x.
+
+lazy_vs is the exception and defaults the other way. It runs one document and sweeps
+FIELDS PER DOCUMENT, so its op names (n1-head … n64-spread) are the swept axis itself and
+belong along x — one figure, the crossover visible across it. Read it on `--metric cyc`:
+GB/s on that bench is a per-contender scan rate, not a ranking.
 
 The bench kind is detected from the op names, and only decides wording and the
 `--headline-op` default. Everything visual comes from scripts/_chartlib.py, shared with
@@ -35,8 +41,12 @@ Two things the numbers will not tell you:
 
 import argparse
 import os
+import re
 import sys
 from collections import OrderedDict
+
+# lazy_vs's op vocabulary: n<count>-head / n<count>-spread
+LAZY_OP = re.compile(r"^n\d+-(head|spread)$")
 
 # the script has no .py extension and may be reached through a symlink, so put its own
 # real directory on the path rather than trusting sys.path[0]
@@ -60,10 +70,22 @@ KINDS = {
         "GB/s divides by the INPUT document, including write/pretty, which emits more than "
         "it reads. Compare these rows to each other, not to a corpus_vs serialize row.",
     ),
+    "lazy": (
+        "lazy extraction",
+        "n1-head",
+        "cyc/op, not GB/s: on this bench the contenders read different numbers of bytes, so "
+        "GB/s is a per-contender SCAN RATE. Each x position is N fields resolved from ONE "
+        "document handle — head draws them from adjacent records at the front, spread from N "
+        "records strided across the document.",
+    ),
 }
 
 
 def detect_kind(rows):
+    # lazy_vs sweeps fields-per-document, so its op names are nN-head / nN-spread
+    for r in rows:
+        if LAZY_OP.match(r["op"]):
+            return "lazy"
     # write_vs is the only one of the two with a '/' in its op names
     for r in rows:
         if r["op"].startswith("write/") or r["op"].startswith("minify/"):
@@ -89,8 +111,10 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("input", nargs="?", default="-",
                     help="parse_vs/write_vs output file, or - for stdin")
-    ap.add_argument("--by", choices=("op", "corpus"), default="op",
-                    help="one figure per op group (default) or per document")
+    ap.add_argument("--by", choices=("op", "corpus"), default=None,
+                    help="one figure per op group (default) or per document "
+                         "(lazy_vs defaults to corpus: its ops ARE the sweep, so one "
+                         "figure per op would be 14 single-bar-group charts)")
     ap.add_argument("--metric", choices=list(METRICS), default="gbps",
                     help="which column to plot (default gbps)")
     ap.add_argument("--all-metrics", action="store_true",
@@ -115,6 +139,8 @@ def main():
     kind = detect_kind(rows)
     name, default_op, note = KINDS[kind]
     headline_op = args.headline_op or default_op
+    # lazy_vs's op names ARE the swept axis, so they belong along x, not one per figure
+    by = args.by or ("corpus" if kind == "lazy" else "op")
 
     stem = "vs" if args.input == "-" else os.path.basename(args.input).split(".")[0]
     prefix = args.prefix if args.prefix is not None else f"{stem}-"
@@ -138,7 +164,7 @@ def main():
 
     # the caveat rides on both groupings, unlike chart_corpus's: it is about how these
     # two benches count bytes, not about which op group you happen to be looking at
-    if args.by == "op":
+    if by == "op":
         groups, key, series = OrderedDict(), "corpus", "impl"
         for r in rows:
             groups.setdefault(r["op"], []).append(r)
@@ -153,7 +179,7 @@ def main():
         if m == "gbps" and all(r["gbps"] != r["gbps"] for r in rows):
             print("chart_vs: input has no GB/s column (pre-8-field layout), skipping")
             continue
-        written += draw(groups, key, series, m, args.out, f"{prefix}{args.by}-",
+        written += draw(groups, key, series, m, args.out, f"{prefix}{by}-",
                         args.mode, note,
                         title_fmt=f"cjson {name} benchmark — {{group}}   ({{metric}})")
 

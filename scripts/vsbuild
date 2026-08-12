@@ -105,6 +105,12 @@ case "$base" in
     OBJS="$SJ_BUILD/simdjson.o $SJ_BUILD/simdjson_shim.o $SJ_BUILD/nlohmann_shim.o $SJ_BUILD/rapidjson_shim.o $SJ_BUILD/boostjson_shim.o $SJ_BUILD/glaze_shim.o $YY_BUILD/libyyjson.a"
     LIBS="-lboost_json -lboost_container"
     ;;
+  lazy_vs)
+    # the lazy sweep calls glaze but none of the dom-only contenders, so it takes the
+    # glaze shim and skips boost/nlohmann/rapidjson entirely
+    OBJS="$SJ_BUILD/simdjson.o $SJ_BUILD/simdjson_shim.o $SJ_BUILD/glaze_shim.o $YY_BUILD/libyyjson.a"
+    LIBS=""
+    ;;
   *)
     OBJS="$SJ_BUILD/simdjson.o $SJ_BUILD/simdjson_shim.o $YY_BUILD/libyyjson.a"
     LIBS=""
