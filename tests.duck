@@ -1,2 +1,4 @@
 # cjson tests
-test tests/ -i include/micron/tests -i include/micron -i include/micron/src
+# --recursive picks up tests/rfc/, tests/rigor/ and tests/fuzz/ as well as the flat TUs.
+# Under --recursive the output name is the source basename
+test tests/ -i include/micron/tests -i include/micron -i include/micron/src --recursive

@@ -86,6 +86,9 @@ struct opts {
   bool relaxed : 1 = false;               // RESERVED TODO: comments + trailing commas via the scalar kernel
   bool with_write_bound : 1 = false;      // accumulate O(1) writer bounds during stage 2 (~6 ins/value;
                                           // without it write_bound falls back to the O(nvals) walks)
+  bool check_grammar : 1 = false;         // on-demand only; runs the stage-2 grammar fsm
+                                          // iterate() otherwise checks stage-1 invariants (utf-8, string
+                                          // termination, control chars) but not the grammar
 };
 
 // %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

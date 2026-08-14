@@ -1,0 +1,34 @@
+# cjson fuzz suite, on snowball's fuzzing kit
+#
+#   duck batch tests/fuzz/fuzz.duck
+#
+# The default build proves the properties; the SANITIZER arms are the real gate. Most of
+# what this suite is looking for -- reads past the caller's buffer, a lost borrow flag, a
+# pool sized len instead of len + padding -- produces a correct answer right up until it
+# does not, and only asan says so out loud.
+#
+# Every TU here uses fixed hex seeds. snowball's run_config{}.seed == 0 falls back to
+# rdtsc; a fuzz failure nobody can reproduce is not a finding.
+#
+# NOTE tests/fuzz_parse.cpp (the flat, pre-existing mutation fuzzer over `validate`) is
+# NOT listed here -- it is picked up by tests.duck with the rest of the flat suite and is
+# left exactly as it was.
+#
+# duck honors only FULL-LINE comments; never trail a comment after a command line.
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# default build (-Ofast, native ISA)
+test tests/fuzz/ -i include/micron/tests -i include/micron -i include/micron/src -o bin/fuzz --timeout 900 -f
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# IEEE-honest build: the bit-exact number comparisons are live here
+test tests/fuzz/ -i include/micron/tests -i include/micron -i include/micron/src -o bin/fuzz/o2 -O2 --timeout 900 -f
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# SSE2 floor: the non-avx2 arm of every kernel
+test tests/fuzz/ -i include/micron/tests -i include/micron -i include/micron/src -o bin/fuzz/base --isa base --timeout 900 -f
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# sanitizers -- the gate. generous timeouts: asan costs 2-4x here.
+test tests/fuzz/ -i include/micron/tests -i include/micron -i include/micron/src -o bin/fuzz/asan --asan --timeout 1800 -f
+test tests/fuzz/ -i include/micron/tests -i include/micron -i include/micron/src -o bin/fuzz/ubsan --ubsan --timeout 1800 -f

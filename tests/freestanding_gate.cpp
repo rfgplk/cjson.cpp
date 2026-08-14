@@ -24,7 +24,8 @@ gate() noexcept
   ok = ok and cjson::as_error(cjson::fail(cjson::error::oom)) == cjson::error::oom;
   u8 buf[8]{};
   cjson::__store64(buf, 0x2020202020202000ull);      // the text-pool pad shape: nul then spaces
-  ok = ok and cjson::is_num_end(buf[0]) and cjson::is_space(buf[1]);
+  ok = ok and buf[0] == 0 and !cjson::is_num_end(buf[0]);
+  ok = ok and cjson::is_space(buf[1]) and cjson::is_num_end(buf[1]);
   return ok;
 }
 

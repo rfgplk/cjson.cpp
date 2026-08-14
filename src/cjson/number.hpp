@@ -199,18 +199,18 @@ inline constexpr u32 max_big_digits = 768;      // beyond this a sticky digit pr
 
 // noinline&&cold; bigints are 520 bytes each, would put a 1248 byte frame on every call
 [[gnu::noinline, gnu::cold]] constexpr bool
-__exact_boundary(const u8 *p, usize start, i64 exp_lit, f64 cand, f64 &out) noexcept
+__exact_boundary(const u8 *p, usize len, usize start, i64 exp_lit, f64 cand, f64 &out) noexcept
 {
   usize s = start;
-  if ( p[s] == u8('-') ) ++s;
+  if ( s < len and p[s] == u8('-') ) ++s;
   const usize int_start = s;
-  while ( u32(p[s]) - u32('0') <= 9 ) ++s;
+  while ( s < len and u32(p[s]) - u32('0') <= 9 ) ++s;
   const usize int_end = s;
   usize frac_start = s, frac_end = s;
-  if ( p[s] == u8('.') ) {
+  if ( s < len and p[s] == u8('.') ) {
     ++s;
     frac_start = s;
-    while ( u32(p[s]) - u32('0') <= 9 ) ++s;
+    while ( s < len and u32(p[s]) - u32('0') <= 9 ) ++s;
     frac_end = s;
   }
   bigint full{};
@@ -440,7 +440,7 @@ read_number(const u8 *p, usize len, usize start, value &out) noexcept
       d = d1;
     } else if ( !o1 ) {
       return fail(error::bad_number);      // even the lower bound is infinite
-    } else if ( !__exact_boundary(p, start, exp_lit, d1, d) ) [[unlikely]] {
+    } else if ( !__exact_boundary(p, len, start, exp_lit, d1, d) ) [[unlikely]] {
       return fail(error::bad_number);      // rounded up into infinity
     }
   }

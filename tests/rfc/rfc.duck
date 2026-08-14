@@ -1,0 +1,37 @@
+# cjson rfc 8259 conformance suite
+#
+#   duck batch tests/rfc/rfc.duck
+#
+# Five configurations per TU. Each one is here for a specific reason:
+#
+#   default    -Ofast, -march=native -- the avx2 kernels, the shipping build
+#   -O2        FP-honest. -Ofast implies -ffinite-math-only, which folds away the
+#              infinity and signed-zero reasoning rfc_numbers and rfc_generator depend
+#              on. Same trap CLAUDE.md records for comparison/yy_xvalidate.cpp.
+#   --isa base SSE2 floor: drops the avx2 bodies and runs the SSE/scalar arms, which is
+#              the other half of the twin contract. rfc_utf8's seam sweep is the payoff.
+#   --asan     the reuse and borrow paths; a pool sized len instead of len + padding
+#              shows up here as a heap-buffer-overflow read inside classify64
+#   --ubsan    signed overflow and misaligned loads in the number kernel
+#
+# -f on every line: these TUs are header-only consumers and duck's mtime cache does not
+# see through a src/cjson/*.hpp edit.
+#
+# duck honors only FULL-LINE comments; never trail a comment after a command line.
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# default build (-Ofast, native ISA)
+test tests/rfc/ -i include/micron/tests -i include/micron -i include/micron/src -o bin/rfc --timeout 600 -f
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# IEEE-honest build: the infinity / signed-zero assertions are live here
+test tests/rfc/ -i include/micron/tests -i include/micron -i include/micron/src -o bin/rfc/o2 -O2 --timeout 600 -f
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# SSE2 floor: the non-avx2 arm of every kernel
+test tests/rfc/ -i include/micron/tests -i include/micron -i include/micron/src -o bin/rfc/base --isa base --timeout 600 -f
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# sanitizers
+test tests/rfc/ -i include/micron/tests -i include/micron -i include/micron/src -o bin/rfc/asan --asan --timeout 900 -f
+test tests/rfc/ -i include/micron/tests -i include/micron -i include/micron/src -o bin/rfc/ubsan --ubsan --timeout 900 -f

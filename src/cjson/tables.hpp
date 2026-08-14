@@ -87,7 +87,6 @@ consteval tbl<256>
 gen_num_end() noexcept
 {
   tbl<256> t{};
-  t.v[0x00] = 1;
   t.v[u8('\t')] = 1;
   t.v[u8('\n')] = 1;
   t.v[u8('\r')] = 1;
@@ -145,10 +144,11 @@ is_num_char(u8 c) noexcept
   return (char_class[c] & (c_digit | c_dot | c_exp | c_sign)) != 0;
 }
 
+// WARNING: 0x00 is not (and can't be) an end token; all fns downstream guard via i < len
 constexpr bool
 is_num_end(u8 c) noexcept
 {
-  return ((char_class[c] & (c_space | c_struct)) != 0) or c == 0;
+  return (char_class[c] & (c_space | c_struct)) != 0;
 }
 
 static_assert([] {
@@ -509,7 +509,8 @@ static_assert(char_class[u8('+')] == (c_strsafe | c_sign));
 static_assert(char_class[u8('{')] == (c_strsafe | c_struct));
 static_assert(char_class[u8(',')] == (c_strsafe | c_struct));
 static_assert(char_class[u8('a')] == c_strsafe);
-static_assert(num_end[0x00] == 1 && num_end[u8(' ')] == 1 && num_end[u8(',')] == 1 && num_end[u8('}')] == 1);
+static_assert(num_end[u8(' ')] == 1 && num_end[u8(',')] == 1 && num_end[u8('}')] == 1);
+static_assert(num_end[0x00] == 0);
 static_assert(num_end[u8('0')] == 0 && num_end[u8('e')] == 0 && num_end[u8('.')] == 0 && num_end[u8('"')] == 0);
 static_assert(is_open(u8('[')) && is_open(u8('{')) && !is_open(u8(']')) && !is_open(u8('"')));
 

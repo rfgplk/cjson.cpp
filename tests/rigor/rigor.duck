@@ -1,0 +1,38 @@
+# cjson rigor suite -- heavy per-subsystem coverage of the public api
+#
+#   duck batch tests/rigor/rigor.duck
+#
+# Five configurations per TU, each earning its place:
+#
+#   default    -Ofast, -march=native -- the avx2 kernels, the shipping build
+#   -O2        FP-honest. -Ofast implies -ffinite-math-only, which folds away the
+#              infinity and signed-zero reasoning rigor_numbers depends on. Same trap
+#              CLAUDE.md records for comparison/yy_xvalidate.cpp.
+#   --isa base SSE2 floor: drops the avx2 bodies and runs the SSE/scalar arms, which is
+#              the other half of the twin contract rigor_twins pins
+#   --asan     rigor_scratch and rigor_mutate are the payoff: a lost borrow flag is a
+#              double free, a shared release() a use-after-free, and a pool sized len
+#              instead of len + padding a heap-buffer-overflow read inside classify64
+#   --ubsan    signed overflow and misaligned loads in the number kernel
+#
+# -f on every line: these are header-only consumers and duck's mtime cache does not see
+# through a src/cjson/*.hpp edit.
+#
+# duck honors only FULL-LINE comments; never trail a comment after a command line.
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# default build (-Ofast, native ISA)
+test tests/rigor/ -i include/micron/tests -i include/micron -i include/micron/src -o bin/rigor --timeout 900 -f
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# IEEE-honest build: the bit-exact number assertions are live here
+test tests/rigor/ -i include/micron/tests -i include/micron -i include/micron/src -o bin/rigor/o2 -O2 --timeout 900 -f
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# SSE2 floor: the non-avx2 arm of every kernel
+test tests/rigor/ -i include/micron/tests -i include/micron -i include/micron/src -o bin/rigor/base --isa base --timeout 900 -f
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# sanitizers
+test tests/rigor/ -i include/micron/tests -i include/micron -i include/micron/src -o bin/rigor/asan --asan --timeout 1800 -f
+test tests/rigor/ -i include/micron/tests -i include/micron -i include/micron/src -o bin/rigor/ubsan --ubsan --timeout 1800 -f

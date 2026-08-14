@@ -24,6 +24,8 @@
 #include "config.hpp"
 #include "error.hpp"
 #include "number.hpp"
+
+#include "parse.hpp"
 #include "scratch.hpp"
 #include "stage1.hpp"
 #include "string.hpp"
@@ -656,6 +658,12 @@ iterate(bytes in, opts o, scratch &sc) noexcept
   const max_t n = __scan::index_input(in.ptr, in.len, sc.idx, o);
   if ( n < 0 ) return result<view>{ micron::tag<error>{}, as_error(n) };
   if ( n == 0 ) return result<view>{ micron::tag<error>{}, error::empty_input };
+  // opt in only
+  if ( o.check_grammar ) [[unlikely]] {
+    usize consumed = 0;
+    if ( const max_t g = __parse::validate_indexes(in.ptr, in.len, sc.idx, n, o, consumed); g < 0 )
+      return result<view>{ micron::tag<error>{}, as_error(g) };
+  }
   view v{};
   v.__p = in.ptr;
   v.__len = in.len;
@@ -727,7 +735,7 @@ process(bytes in, opts o, scratch &sc) noexcept
   if ( in.len == 0 ) return view{};
   if ( !sc.ensure(in.len) ) return view{};
   const max_t n = __scan::index_input(in.ptr, in.len, sc.idx, o);
-  if ( n <= 0 ) view{};
+  if ( n <= 0 ) return view{};
   view v{};
   v.__p = in.ptr;
   v.__len = in.len;
