@@ -14,6 +14,13 @@
 //
 // kParseInsituFlag is deliberately NOT used: the other contenders' parse rows are all
 // copy-mode, and cjson's insitu row is labelled separately when it appears.
+//
+// kParseFullPrecisionFlag IS used, on every Parse call site. rapidjson's default number
+// reader is a fast approximate strtod that can land one ulp off; cjson, yyjson, simdjson
+// and glaze are all exactly rounded. Leaving it off bought rapidjson a cheaper number
+// path than anyone else on the number-dense corpora (canada, numbers, mesh,
+// countries.geo) by answering a slightly different question. Correctness is the thing
+// being held constant across contenders, so rapidjson pays for it like everyone else.
 
 #include <rapidjson/document.h>
 #include <rapidjson/pointer.h>
@@ -68,7 +75,7 @@ int
 rj_parse(void *, const char *buf, unsigned long n)
 {
   rapidjson::Document doc;
-  doc.Parse(buf, n);
+  doc.Parse<rapidjson::kParseFullPrecisionFlag>(buf, n);
   return doc.HasParseError() ? 0 : 1;
 }
 
@@ -77,7 +84,7 @@ int
 rj_load(void *p, const char *buf, unsigned long n)
 {
   auto *s = static_cast<state *>(p);
-  s->doc.Parse(buf, n);
+  s->doc.Parse<rapidjson::kParseFullPrecisionFlag>(buf, n);
   return s->doc.HasParseError() ? 0 : 1;
 }
 
@@ -96,7 +103,7 @@ long long
 rj_extract(void *, const char *buf, unsigned long n, const char *ptr)
 {
   rapidjson::Document doc;
-  doc.Parse(buf, n);
+  doc.Parse<rapidjson::kParseFullPrecisionFlag>(buf, n);
   if ( doc.HasParseError() ) return 0;
   const rapidjson::Value *v = rapidjson::Pointer(ptr).Get(doc);
   return v ? checksum(*v) : 0;

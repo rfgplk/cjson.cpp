@@ -10,15 +10,41 @@
 // polygons. The tracked sample/ corpus is all one shape, and a library tuned only
 // against it is a library tuned against one workload.
 //
-// Three op groups per corpus:
-//   parse      full dom materialization, every contender, copy mode
-//   extract    one rfc 6901 pointer, however the library likes to reach it — the lazy
-//              paths (cjson-ondemand, simdjson-ondemand, glaze-lazy) are doing
-//              genuinely less work than the dom ones, so they print in their own group,
-//              and inside that group GB/s divides by the bytes each contender actually
-//              reads: glaze's walk stops at the pointer, cjson and simdjson index the
-//              whole buffer. It is a scan rate, not a race — cyc/op is the race
-//   serialize  dom -> minified text, off a document parsed once outside the timer
+// INDEX vs TREE: the split that runs through every group here.
+//
+// "parse a document" is two different jobs and the numbers do not mix.
+//
+//   * An INDEX (tape) builder — cjson, simdjson-dom, yyjson — emits a flat array of
+//     fixed-size slots over the caller's bytes. Strings are not materialized: cjson
+//     stores {offset, length} and only unescapes on demand. Objects get no key index;
+//     lookup is a linear scan at access time. Teardown is one free.
+//   * A TREE builder — glz::generic, rapidjson, boost.json, nlohmann — returns an owning,
+//     mutable node graph. Every string value and every key is its own std::string; every
+//     array is a vector that reallocs as it grows; every object is a map that builds a
+//     lookup index. Teardown is a recursive destructor walk.
+//
+// The tree band genuinely retires several times the instructions of the index band, and
+// on a 26 MB document that is ~6x. That difference is the representation the caller asked
+// for, not the speed of the parser that built it. Printing all eight in one ranked list
+// implied an ordering the data does not support — the two bands are separated by a gap
+// with nothing in it — so every group below is split and print_group is never handed rows
+// from both. Within a band the comparison is like-for-like and the ranking is real.
+//
+// glz::generic is named in full for the same reason: it is glaze's schema-less fallback
+// tree, not its reflected fast path, and the row should say which one it is. glaze's
+// lazy apis are measured separately in the extract group and in benches/lazy_vs.cpp.
+//
+// Op groups per corpus:
+//   parse/index      tape materialization  — cjson, cjson-reuse, yyjson, simdjson-dom
+//   parse/tree       owning tree           — rapidjson, glz::generic, boost.json, nlohmann
+//   extract-lazy     one rfc 6901 pointer, walked without building anything (cjson-ondemand,
+//                    simdjson-ondemand, glaze-lazy, glaze-lazyjson). GB/s divides by the
+//                    bytes each contender actually reads: glaze's walk stops at the
+//                    pointer, cjson and simdjson index the whole buffer. It is a scan
+//                    rate, not a race — cyc/op is the race
+//   extract-dom/*    same pointer, but reached by building first — split index vs tree
+//   serialize/*      dom -> minified text off a document parsed once outside the timer,
+//                    split index vs tree
 //
 // Corpora absent from disk are skipped silently: run scripts/fetch_corpus to populate
 // sample/web/ first. comparison tu — libc/stl allowed.
@@ -263,36 +289,45 @@ main(int argc, char **argv)
     const bool mem_capped = n > k_dom_mem_limit;
     if ( mem_capped && do_parse )
       micron::io::println("    (", n >> 20, " MB > ", k_dom_mem_limit >> 20,
-                          " MB dom budget: nlohmann, boost.json, rapidjson and glaze excluded — "
-                          "their dom would exceed this box's RAM)");
+                          " MB dom budget: the whole parse/tree band is excluded — an owning "
+                          "node tree over this document would exceed this box's RAM)");
 
+    // TWO groups, never one — see the banner comment at the top of this file.
     if ( do_parse ) {
-      mb::row g[8];
-      u32 k = 0;
       {
-        cjson::scratch sc;
-        g[k++] = mb::bench_one("parse", "cjson", n, n, [&] { mb::sink_bool(cjson::parse(in, {}, sc).is_first()); }, cap);
+        mb::row g[4];
+        u32 k = 0;
+        {
+          cjson::scratch sc;
+          g[k++] = mb::bench_one("parse/index", "cjson", n, n, [&] { mb::sink_bool(cjson::parse(in, {}, sc).is_first()); }, cap);
+        }
+        {
+          static cjson::scratch warm;
+          g[k++]
+              = mb::bench_one("parse/index", "cjson-reuse", n, n, [&] { mb::sink_bool(cjson::parse_reuse(in, {}, warm).is_first()); }, cap);
+        }
+        g[k++] = mb::bench_one(
+            "parse/index", "yyjson", n, n,
+            [&] {
+              yyjson_doc *d = yyjson_read(buf, n, 0);
+              mb::sink_bool(d != nullptr);
+              if ( d ) yyjson_doc_free(d);
+            },
+            cap);
+        g[k++] = mb::bench_one("parse/index", "simdjson-dom(warm)", n, n, [&] { mb::sink_bool(sj_dom_parse(sj_dom, buf, n) == 1); }, cap);
+        mb::print_group(g, k);
       }
-      {
-        static cjson::scratch warm;
-        g[k++] = mb::bench_one("parse", "cjson-reuse", n, n, [&] { mb::sink_bool(cjson::parse_reuse(in, {}, warm).is_first()); }, cap);
-      }
-      g[k++] = mb::bench_one(
-          "parse", "yyjson", n, n,
-          [&] {
-            yyjson_doc *d = yyjson_read(buf, n, 0);
-            mb::sink_bool(d != nullptr);
-            if ( d ) yyjson_doc_free(d);
-          },
-          cap);
-      g[k++] = mb::bench_one("parse", "simdjson-dom", n, n, [&] { mb::sink_bool(sj_dom_parse(sj_dom, buf, n) == 1); }, cap);
+      // no cjson row here on purpose: cjson does not build an owning tree, so there is no
+      // like-for-like cjson number to put beside these and print_group prints no ratio
       if ( !mem_capped ) {
-        g[k++] = mb::bench_one("parse", "rapidjson", n, n, [&] { mb::sink_bool(rj_parse(rj, buf, n) == 1); }, cap);
-        g[k++] = mb::bench_one("parse", "glaze", n, n, [&] { mb::sink_bool(gl_parse(gl, buf, n) == 1); }, cap);
-        g[k++] = mb::bench_one("parse", "boost.json", n, n, [&] { mb::sink_bool(bj_parse(bj, buf, n) == 1); }, cap);
-        g[k++] = mb::bench_one("parse", "nlohmann", n, n, [&] { mb::sink_bool(nl_parse(nl, buf, n) == 1); }, cap);
+        mb::row g[4];
+        u32 k = 0;
+        g[k++] = mb::bench_one("parse/tree", "rapidjson", n, n, [&] { mb::sink_bool(rj_parse(rj, buf, n) == 1); }, cap);
+        g[k++] = mb::bench_one("parse/tree", "glz::generic", n, n, [&] { mb::sink_bool(gl_parse(gl, buf, n) == 1); }, cap);
+        g[k++] = mb::bench_one("parse/tree", "boost.json", n, n, [&] { mb::sink_bool(bj_parse(bj, buf, n) == 1); }, cap);
+        g[k++] = mb::bench_one("parse/tree", "nlohmann", n, n, [&] { mb::sink_bool(nl_parse(nl, buf, n) == 1); }, cap);
+        mb::print_group(g, k);
       }
-      mb::print_group(g, k);
     }
 
     if ( do_extract && c.ptr[0] != '\0' ) {
@@ -358,13 +393,16 @@ main(int argc, char **argv)
         mb::print_group(g, k);
       }
 
+      // build-then-reach, split the same way as parse: the build dominates this row, so
+      // the index/tree gap dominates it too
       {
-        mb::row g[5];
+        mb::row g[2];
         u32 k = 0;
         if ( ok_dom )
-          g[k++] = mb::bench_one("extract-dom", "cjson-dom", n, n, [&] { mb::sink_size(usize(cj_extract_dom(in, c.ptr, dom_sc))); }, cap);
+          g[k++] = mb::bench_one(
+              "extract-dom/index", "cjson-dom", n, n, [&] { mb::sink_size(usize(cj_extract_dom(in, c.ptr, dom_sc))); }, cap);
         g[k++] = mb::bench_one(
-            "extract-dom", "yyjson", n, n,
+            "extract-dom/index", "yyjson", n, n,
             [&] {
               yyjson_doc *d = yyjson_read(buf, n, 0);
               if ( d ) {
@@ -374,13 +412,18 @@ main(int argc, char **argv)
               }
             },
             cap);
-        if ( ok_rj )
-          g[k++] = mb::bench_one("extract-dom", "rapidjson", n, n, [&] { mb::sink_size(usize(rj_extract(rj, buf, n, c.ptr))); }, cap);
-        if ( ok_bj )
-          g[k++] = mb::bench_one("extract-dom", "boost.json", n, n, [&] { mb::sink_size(usize(bj_extract(bj, buf, n, c.ptr))); }, cap);
-        if ( ok_nl )
-          g[k++] = mb::bench_one("extract-dom", "nlohmann", n, n, [&] { mb::sink_size(usize(nl_extract(nl, buf, n, c.ptr))); }, cap);
         mb::print_group(g, k);
+      }
+      {
+        mb::row g[3];
+        u32 k = 0;
+        if ( ok_rj )
+          g[k++] = mb::bench_one("extract-dom/tree", "rapidjson", n, n, [&] { mb::sink_size(usize(rj_extract(rj, buf, n, c.ptr))); }, cap);
+        if ( ok_bj )
+          g[k++] = mb::bench_one("extract-dom/tree", "boost.json", n, n, [&] { mb::sink_size(usize(bj_extract(bj, buf, n, c.ptr))); }, cap);
+        if ( ok_nl )
+          g[k++] = mb::bench_one("extract-dom/tree", "nlohmann", n, n, [&] { mb::sink_size(usize(nl_extract(nl, buf, n, c.ptr))); }, cap);
+        if ( k ) mb::print_group(g, k);
       }
     }
 
@@ -399,36 +442,53 @@ main(int argc, char **argv)
         // produce the same minified text, so the ratios are untouched and the absolute
         // number finally means "serialization throughput" rather than "input bytes/s"
         const usize ob = cjson::write(cd).size();
-        mb::row g[7];
-        u32 k = 0;
-        g[k++] = mb::bench_one(
-            "serialize", "cjson", n, ob,
-            [&] {
-              cjson::fjson o = cjson::write(cd);
-              mb::sink_size(o.size());
-            },
-            cap);
-        // apples-to-apples with glaze/rapidjson/boost/nlohmann, which all serialize into a
-        // retained buffer. the row above pays a fresh mmap + first-touch fault storm per
-        // rep; this one does not, and that difference is ~2.2x of wall clock on 5MB
+        // emitting from a tape and emitting from a node tree are the same split as parse:
+        // one is a straight-line walk of contiguous slots, the other chases owned nodes
         {
-          static cjson::wbuf warm;
-          g[k++] = mb::bench_one("serialize", "cjson-reuse", n, ob, [&] { mb::sink_size(usize(cjson::write_into(cd, warm))); }, cap);
+          mb::row g[3];
+          u32 k = 0;
+          g[k++] = mb::bench_one(
+              "serialize/index", "cjson", n, ob,
+              [&] {
+                cjson::fjson o = cjson::write(cd);
+                mb::sink_size(o.size());
+              },
+              cap);
+          // the row above pays a fresh mmap + first-touch fault storm per rep; this one
+          // does not, and that difference is ~2.2x of wall clock on 5MB
+          {
+            static cjson::wbuf warm;
+            g[k++]
+                = mb::bench_one("serialize/index", "cjson-reuse", n, ob, [&] { mb::sink_size(usize(cjson::write_into(cd, warm))); }, cap);
+          }
+          g[k++] = mb::bench_one(
+              "serialize/index", "yyjson", n, ob,
+              [&] {
+                usize len = 0;
+                char *s = yyjson_write(yd, 0, &len);
+                mb::sink_size(len);
+                std::free(s);
+              },
+              cap);
+          mb::print_group(g, k);
         }
-        g[k++] = mb::bench_one(
-            "serialize", "yyjson", n, ob,
-            [&] {
-              usize len = 0;
-              char *s = yyjson_write(yd, 0, &len);
-              mb::sink_size(len);
-              std::free(s);
-            },
-            cap);
-        if ( rj_ok ) g[k++] = mb::bench_one("serialize", "rapidjson", n, ob, [&] { mb::sink_size(usize(rj_serialize(rj))); }, cap);
-        if ( gl_ok ) g[k++] = mb::bench_one("serialize", "glaze", n, ob, [&] { mb::sink_size(usize(gl_serialize(gl))); }, cap);
-        if ( bj_ok ) g[k++] = mb::bench_one("serialize", "boost.json", n, ob, [&] { mb::sink_size(usize(bj_serialize(bj))); }, cap);
-        if ( nl_ok ) g[k++] = mb::bench_one("serialize", "nlohmann", n, ob, [&] { mb::sink_size(usize(nl_serialize(nl))); }, cap);
-        mb::print_group(g, k);
+        // buffer conventions inside this band are NOT uniform and the labels say so.
+        // rapidjson (sb.Clear()), glz::generic (out.clear()) and boost.json (serializer
+        // into a retained string) all reuse their output buffer. nlohmann's dump() returns
+        // a fresh std::string and it has no public api that writes into a caller's buffer,
+        // so its row allocates once per rep — that is nlohmann's fastest public spelling,
+        // not a handicap imposed here.
+        {
+          mb::row g[4];
+          u32 k = 0;
+          if ( rj_ok ) g[k++] = mb::bench_one("serialize/tree", "rapidjson", n, ob, [&] { mb::sink_size(usize(rj_serialize(rj))); }, cap);
+          if ( gl_ok )
+            g[k++] = mb::bench_one("serialize/tree", "glz::generic", n, ob, [&] { mb::sink_size(usize(gl_serialize(gl))); }, cap);
+          if ( bj_ok ) g[k++] = mb::bench_one("serialize/tree", "boost.json", n, ob, [&] { mb::sink_size(usize(bj_serialize(bj))); }, cap);
+          if ( nl_ok )
+            g[k++] = mb::bench_one("serialize/tree", "nlohmann(alloc)", n, ob, [&] { mb::sink_size(usize(nl_serialize(nl))); }, cap);
+          if ( k ) mb::print_group(g, k);
+        }
       }
       if ( yd ) yyjson_doc_free(yd);
     }

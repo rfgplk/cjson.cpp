@@ -1,0 +1,70 @@
+# ondemand_vs  2026-08-04  host: AMD Ryzen 7 3700U with Radeon Vega Mobile Gfx  kernel 7.1.5-201.fc44.x86_64
+# tree: 71fac80 (+36 dirty files)  build: duck/vsbuild --perf --fp --no-ssp --no-lto (vs TUs: -Ofast)
+
+   size(B)  op                          impl                cyc/op       IPC    bmiss%
+--------------------------------------------------------------------------------------
+       140  jwt-claims                  cjson-ondemand      733.80      2.69      0.00
+       140  jwt-claims                  yyjson              694.48      2.63      0.00
+       140  jwt-claims                  simdjson-ondemand   659.73      2.39      0.42
+    631659  twitter-drill               cjson-ondemand   813672.19      2.42      3.64
+    631659  twitter-drill               yyjson          2011522.28      1.38      1.48
+    631659  twitter-drill               simdjson-ondemand502629.66      2.45      4.45
+
+## perf stat (bin/ondemand_vs )
+ Performance counter stats for 'bin/ondemand_vs':
+
+     1,132,170,511      cycles:u                                                                (13.15%)
+     2,407,433,538      instructions:u                                                          (13.51%)
+       416,843,539      branches:u                                                              (13.86%)
+         4,082,589      branch-misses:u                                                         (13.53%)
+        27,718,146      cache-references:u                                                      (13.42%)
+           895,810      cache-misses:u                                                          (13.10%)
+        14,027,744      L1-dcache-load-misses:u                                                 (12.77%)
+           217,107      dTLB-load-misses:u                                                      (12.86%)
+            60,675      page-faults:u                                                         
+
+       0.533027132 seconds time elapsed
+
+       0.347041000 seconds user
+       0.176074000 seconds sys
+
+
+
+## hotspots (flat self%, --call-graph fp, -F 997)
+    36.88%  [.] yyjson_read_opts                                                                                                                                                                                                         -      -            
+             --7.88%--mb::sample mb::measure_once<main::{lambda()#2}&>(main::{lambda()#2}&, unsigned long)
+                       main
+                       __libc_start_call_main
+                       __libc_start_main@@GLIBC_2.34
+                       _start
+    13.92%  [.] simdjson::error_code simdjson::haswell::(anonymous namespace)::stage1::json_structural_indexer::index<128ul>(unsigned char const*, unsigned long, simdjson::haswell::dom_parser_implementation&, simdjson::stage1_mode)  -      -            
+             --3.63%--sj_od_claims
+                       0x7ffcb9c4f5b0
+                       0x7ffcb9c4f760
+                       0x7ef907800160
+     9.44%  [.] cjson::__scan::block_masks cjson::__scan::classify64<true>(unsigned char const*, cjson::__scan::utf8_state_amd64&)                                                                                                       -      -            
+             --3.29%--main::{lambda()#1}::operator()() const
+                       mb::sample mb::measure_once<main::{lambda()#1}&>(main::{lambda()#1}&, unsigned long)
+     7.02%  [.] cjson::cur::operator[](micron::raw_slice<char const>) const                                                                                                                                                              -      -            
+             --1.65%--mb::sample mb::measure_once<main::{lambda()#1}&>(main::{lambda()#1}&, unsigned long)
+     6.73%  [.] sj_od_claims                                                                                                                                                                                                             -      -            
+            ---0x700000006
+     6.19%  [.] cjson::__scan::flatten64(unsigned int*, unsigned int, unsigned long)                                                                                                                                                     -      -            
+             --5.40%--mb::sample mb::measure_once<main::{lambda()#4}&>(main::{lambda()#4}&, unsigned long)
+     5.38%  [.] main::{lambda()#4}::operator()() const                                                                                                                                                                                   -      -            
+            ---mb::sample mb::measure_once<main::{lambda()#4}&>(main::{lambda()#4}&, unsigned long)
+     2.05%  [k] 0xffffffffb6a01280                                                                                                                                                                                                       -      -            
+             --1.14%--__memmove_avx_unaligned_erms
+                       mb::sample mb::measure_once<main::{lambda()#5}&>(main::{lambda()#5}&, unsigned long)
+                       main
+                       __libc_start_call_main
+                       __libc_start_main@@GLIBC_2.34
+                       _start
+     1.36%  [.] abc::__arena::__vmap_remove_at(unsigned char*) [clone .isra.0]                                                                                                                                                           -      -            
+            ---main
+               __libc_start_call_main
+               __libc_start_main@@GLIBC_2.34
+               _start
+     1.33%  [.] main::{lambda()#1}::operator()() const                                                                                                                                                                                   -      -            
+            ---mb::sample mb::measure_once<main::{lambda()#1}&>(main::{lambda()#1}&, unsigned long)
+     1.09%  [.] cjson::__num::read_number(unsigned char const*, unsigned long, unsigned long, cjson::value&)                                                                                                                             -      -            

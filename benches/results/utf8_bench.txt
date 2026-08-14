@@ -1,0 +1,67 @@
+# utf8_bench  2026-08-04  host: AMD Ryzen 7 3700U with Radeon Vega Mobile Gfx  kernel 7.1.5-201.fc44.x86_64
+# tree: 71fac80 (+36 dirty files)  build: duck/vsbuild --perf --fp --no-ssp --no-lto (vs TUs: -Ofast)
+
+   size(B)  op                          impl                cyc/op       IPC    bmiss%
+--------------------------------------------------------------------------------------
+  26141344  utf8/validate               corpus-largefile6973751.41      1.82      0.43
+    631659  utf8/validate               corpus-twitter   334953.47      2.73      1.90
+   1048576  utf8/validate               synth-ascii      109069.13      4.21      0.00
+   1048576  utf8/validate               synth-mixed     4419870.66      3.81      0.39
+   1048576  utf8/validate               synth-cjk       1071837.38      5.22      0.00
+    631659  validate/utf8-on            cjson           1398736.13      2.11      3.19
+    631659  validate/utf8-off           cjson           1227118.91      2.18      3.15
+
+## perf stat (bin/utf8_bench )
+ Performance counter stats for 'bin/utf8_bench':
+
+     3,676,041,054      cycles:u                                                                (17.06%)
+     8,731,360,483      instructions:u                                                          (16.81%)
+     2,160,908,326      branches:u                                                              (16.42%)
+        11,381,522      branch-misses:u                                                         (17.10%)
+       196,696,252      cache-references:u                                                      (17.52%)
+         2,529,266      cache-misses:u                                                          (16.97%)
+       107,818,334      L1-dcache-load-misses:u                                                 (17.25%)
+         1,395,673      dTLB-load-misses:u                                                      (16.62%)
+            41,561      page-faults:u                                                         
+
+       2.327484012 seconds time elapsed
+
+       1.143473000 seconds user
+       0.128029000 seconds sys
+
+
+
+## hotspots (flat self%, --call-graph fp, -F 997)
+    76.13%  [.] mb::sample mb::measure_once<(anonymous namespace)::val_row(char const*, unsigned char const*, unsigned long)::{lambda()#1}&>((anonymous namespace)::val_row(char const*, unsigned char const*, unsigned long)::{lambda()#1}&, unsigned long)  -      -            
+            ---(anonymous namespace)::val_row(char const*, unsigned char const*, unsigned long)
+               main
+               __libc_start_call_main
+               __libc_start_main@@GLIBC_2.34
+               _start
+     6.68%  [.] cjson::__parse::validate_indexes(unsigned char const*, unsigned long, unsigned int const*, long, cjson::opts, unsigned long&)                                                                                                                 -      -            
+             --3.26%--mb::sample mb::measure_once<main::{lambda()#1}&>(main::{lambda()#1}&, unsigned long)
+                       main
+                       __libc_start_call_main
+                       __libc_start_main@@GLIBC_2.34
+                       _start
+     6.13%  [.] (anonymous namespace)::slurp(char const*)                                                                                                                                                                                                     -      -            
+            ---main
+               __libc_start_call_main
+               __libc_start_main@@GLIBC_2.34
+               _start
+     4.10%  [.] mb::sample mb::measure_once<main::{lambda()#1}&>(main::{lambda()#1}&, unsigned long)                                                                                                                                                          -      -            
+            ---main
+               __libc_start_call_main
+               __libc_start_main@@GLIBC_2.34
+               _start
+     2.85%  [.] mb::sample mb::measure_once<main::{lambda()#2}&>(main::{lambda()#2}&, unsigned long)                                                                                                                                                          -      -            
+            ---main
+               __libc_start_call_main
+               __libc_start_main@@GLIBC_2.34
+               _start
+     1.37%  [.] (anonymous namespace)::val_row(char const*, unsigned char const*, unsigned long)                                                                                                                                                              -      -            
+            ---main
+               __libc_start_call_main
+               __libc_start_main@@GLIBC_2.34
+               _start
+     1.03%  [.] cjson::__parse::validate_string(unsigned char const*, unsigned long, unsigned int const*, long, long&)                                                                                                                                        -      -            

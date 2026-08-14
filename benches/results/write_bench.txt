@@ -1,0 +1,83 @@
+# write_bench  2026-08-04  host: AMD Ryzen 7 3700U with Radeon Vega Mobile Gfx  kernel 7.1.5-201.fc44.x86_64
+# tree: 71fac80 (+36 dirty files)  build: duck/vsbuild --perf --fp --no-ssp --no-lto (vs TUs: -Ofast)
+
+   size(B)  op                          impl                cyc/op       IPC    bmiss%
+--------------------------------------------------------------------------------------
+     57683  write/minify                cjson             90111.79      2.47      0.73
+     57683  write/pretty4               cjson            116930.76      2.31      0.51
+     57683  write/into-reuse            cjson             88952.96      2.50      0.73
+     57683  write/bound-only            cjson                11.26      1.20      3.13
+    631659  write/minify                cjson            969434.06      2.36      1.25
+    631659  write/pretty4               cjson           1410788.31      1.98      1.44
+    631659  write/into-reuse            cjson            933160.78      2.45      1.08
+    631659  write/bound-only            cjson                16.47      0.86      6.73
+   1026294  write/minify                cjson           1522592.06      2.33      0.85
+   1026294  write/pretty4               cjson           2028635.16      2.13      0.59
+   1026294  write/into-reuse            cjson           1407955.41      2.52      0.73
+   1026294  write/bound-only            cjson                16.59      0.85      6.73
+   5131466  write/minify                cjson           7655621.84      2.32      0.85
+   5131466  write/pretty4               cjson          10069897.81      2.14      0.58
+   5131466  write/into-reuse            cjson           7135538.63      2.49      0.74
+   5131466  write/bound-only            cjson                16.19      0.87      6.73
+
+## perf stat (bin/write_bench )
+ Performance counter stats for 'bin/write_bench':
+
+     7,782,845,476      cycles:u                                                                (13.76%)
+    18,040,729,538      instructions:u                                                          (14.31%)
+     3,410,101,885      branches:u                                                              (14.01%)
+        25,922,012      branch-misses:u                                                         (13.85%)
+       338,925,924      cache-references:u                                                      (13.23%)
+         6,382,682      cache-misses:u                                                          (13.81%)
+       180,329,597      L1-dcache-load-misses:u                                                 (13.92%)
+         4,168,609      dTLB-load-misses:u                                                      (13.76%)
+           751,048      page-faults:u                                                         
+
+       8.484245517 seconds time elapsed
+
+       2.283925000 seconds user
+       1.945179000 seconds sys
+
+
+
+## hotspots (flat self%, --call-graph fp, -F 997)
+    23.10%  [.] unsigned char* cjson::__write::emit_t<false>(unsigned char*, cjson::value const*, unsigned char const*, unsigned char)            -      -            
+             --10.75%--mb::sample mb::measure_once<main::{lambda()#1}&>(main::{lambda()#1}&, unsigned long)
+                       main
+                       __libc_start_call_main
+                       __libc_start_main@@GLIBC_2.34
+                       _start
+    20.66%  [.] unsigned char* micron::memcpy<unsigned char, unsigned char>(unsigned char*, unsigned char const*, unsigned long) [clone .isra.0]  -      -            
+             --6.20%--mb::sample mb::measure_once<main::{lambda()#3}&>(main::{lambda()#3}&, unsigned long)
+                       main.cold
+                       __libc_start_call_main
+                       __libc_start_main@@GLIBC_2.34
+                       _start
+    19.59%  [.] cjson::__dtoa::write_f64(unsigned char*, _Float64)                                                                                -      -            
+             --5.65%--unsigned char* cjson::__write::emit_t<true>(unsigned char*, cjson::value const*, unsigned char const*, unsigned char)
+                        --5.58%--mb::sample mb::measure_once<main::{lambda()#2}&>(main::{lambda()#2}&, unsigned long)
+                                  main.cold
+                                  __libc_start_call_main
+                                  __libc_start_main@@GLIBC_2.34
+                                  _start
+    18.83%  [.] unsigned char* cjson::__write::emit_t<true>(unsigned char*, cjson::value const*, unsigned char const*, unsigned char)             -      -            
+             --18.44%--mb::sample mb::measure_once<main::{lambda()#2}&>(main::{lambda()#2}&, unsigned long)
+                       main.cold
+                       __libc_start_call_main
+                       __libc_start_main@@GLIBC_2.34
+                       _start
+     3.46%  [.] cjson::__itoa::w1_8(unsigned char*, unsigned int)                                                                                 -      -            
+             --2.22%--unsigned char* cjson::__write::emit_t<false>(unsigned char*, cjson::value const*, unsigned char const*, unsigned char)
+                        --1.32%--mb::sample mb::measure_once<main::{lambda()#3}&>(main::{lambda()#3}&, unsigned long)
+                                  main.cold
+                                  __libc_start_call_main
+                                  __libc_start_main@@GLIBC_2.34
+                                  _start
+     3.16%  [k] 0xffffffffb6a01280                                                                                                                -      -            
+             --2.02%--unsigned char* micron::memcpy<unsigned char, unsigned char>(unsigned char*, unsigned char const*, unsigned long) [clone .isra.0]
+                        --1.13%--mb::sample mb::measure_once<main::{lambda()#2}&>(main::{lambda()#2}&, unsigned long)
+                                  main.cold
+                                  __libc_start_call_main
+                                  __libc_start_main@@GLIBC_2.34
+                                  _start
+     2.90%  [.] micron::__memcpy_large(unsigned char*, unsigned char const*, unsigned long) [clone .isra.0]                                       -      -            

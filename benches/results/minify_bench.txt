@@ -1,0 +1,82 @@
+# minify_bench  2026-08-04  host: AMD Ryzen 7 3700U with Radeon Vega Mobile Gfx  kernel 7.1.5-201.fc44.x86_64
+# tree: 71fac80 (+39 dirty files)  build: duck/vsbuild --perf --fp --no-ssp --no-lto (vs TUs: -Ofast)
+
+   size(B)  op                          impl                cyc/op       IPC    bmiss%
+--------------------------------------------------------------------------------------
+     57683  minify/into-reuse           cjson            188296.54      1.68      1.23
+     57683  minify/scratch              cjson            185868.74      1.70      1.22
+     57683  minify/owning               cjson            187118.39      1.69      1.23
+    631659  minify/into-reuse           cjson           3821840.41      1.25      4.76
+    631659  minify/scratch              cjson           3773506.47      1.27      4.73
+    631659  minify/owning               cjson           3890265.13      1.23      4.80
+   5131466  minify/into-reuse           cjson          20332500.84      1.50      2.20
+   5131466  minify/scratch              cjson          14585574.72      2.09      2.11
+   5131466  minify/owning               cjson          15402181.88      1.97      2.24
+  26141344  minify/into-reuse           cjson          72062178.03      1.89      2.61
+  26141344  minify/scratch              cjson          67861777.75      2.01      2.56
+  26141344  minify/owning               cjson          85062708.31      1.60      2.75
+    767472  minify/into-reuse           cjson-pretty4   2997058.97      1.70      4.51
+    767472  minify/scratch              cjson-pretty4   2842042.66      1.79      4.42
+    767472  minify/owning               cjson-pretty4   2948277.16      1.73      4.55
+
+## perf stat (bin/minify_bench )
+ Performance counter stats for 'bin/minify_bench':
+
+    64,256,126,718      cycles:u                                                                (13.64%)
+   120,543,125,413      instructions:u                                                          (13.75%)
+    21,685,917,775      branches:u                                                              (13.70%)
+       570,484,002      branch-misses:u                                                         (13.68%)
+     3,365,309,840      cache-references:u                                                      (13.68%)
+        48,954,334      cache-misses:u                                                          (13.70%)
+     1,759,094,696      L1-dcache-load-misses:u                                                 (13.70%)
+        33,781,635      dTLB-load-misses:u                                                      (13.70%)
+         3,672,923      page-faults:u                                                         
+
+      58.983425241 seconds time elapsed
+
+      31.884590000 seconds user
+      17.486467000 seconds sys
+
+
+
+## hotspots (flat self%, --call-graph fp, -F 997)
+    50.97%  [.] cjson::__minify::sweep(unsigned char const*, unsigned long, unsigned int*, unsigned char*, unsigned long, unsigned long&)                                                                                                                                                                         -      -            
+             --14.69%--mb::sample mb::measure_once<(anonymous namespace)::minify_rows<unsigned char const*>(char const*, unsigned char const*, unsigned long)::{lambda()#3}&>((anonymous namespace)::minify_rows<unsigned char const*>(char const*, unsigned char const*, unsigned long)::{lambda()#3}&, unsigned long)
+                       main.cold
+                       __libc_start_call_main
+                       __libc_start_main@@GLIBC_2.34
+                       _start
+    22.14%  [.] cjson::__parse::validate_indexes(unsigned char const*, unsigned long, unsigned int const*, long, cjson::opts, unsigned long&)                                                                                                                                                                     -      -            
+             --6.96%--mb::sample mb::measure_once<(anonymous namespace)::minify_rows<unsigned char const*>(char const*, unsigned char const*, unsigned long)::{lambda()#3}&>((anonymous namespace)::minify_rows<unsigned char const*>(char const*, unsigned char const*, unsigned long)::{lambda()#3}&, unsigned long)
+                       main.cold
+                       __libc_start_call_main
+                       __libc_start_main@@GLIBC_2.34
+                       _start
+     7.10%  [.] cjson::__parse::validate_string(unsigned char const*, unsigned long, unsigned int const*, long, long&)                                                                                                                                                                                            -      -            
+             --5.85%--cjson::__parse::validate_indexes(unsigned char const*, unsigned long, unsigned int const*, long, cjson::opts, unsigned long&)
+                        --1.88%--mb::sample mb::measure_once<(anonymous namespace)::minify_rows<unsigned char const*>(char const*, unsigned char const*, unsigned long)::{lambda()#3}&>((anonymous namespace)::minify_rows<unsigned char const*>(char const*, unsigned char const*, unsigned long)::{lambda()#3}&, unsigned long)
+                                  main.cold
+                                  __libc_start_call_main
+                                  __libc_start_main@@GLIBC_2.34
+                                  _start
+     4.71%  [.] cjson::__parse::validate_number(unsigned char const*, unsigned long, unsigned long)                                                                                                                                                                                                               -      -            
+             --1.37%--mb::sample mb::measure_once<(anonymous namespace)::minify_rows<unsigned char const*>(char const*, unsigned char const*, unsigned long)::{lambda()#3}&>((anonymous namespace)::minify_rows<unsigned char const*>(char const*, unsigned char const*, unsigned long)::{lambda()#3}&, unsigned long)
+                       main.cold
+                       __libc_start_call_main
+                       __libc_start_main@@GLIBC_2.34
+                       _start
+     3.09%  [.] mb::sample mb::measure_once<(anonymous namespace)::minify_rows<unsigned char const*>(char const*, unsigned char const*, unsigned long)::{lambda()#3}&>((anonymous namespace)::minify_rows<unsigned char const*>(char const*, unsigned char const*, unsigned long)::{lambda()#3}&, unsigned long)  -      -            
+            ---main.cold
+               __libc_start_call_main
+               __libc_start_main@@GLIBC_2.34
+               _start
+     3.03%  [.] mb::sample mb::measure_once<(anonymous namespace)::minify_rows<unsigned char const*>(char const*, unsigned char const*, unsigned long)::{lambda()#1}&>((anonymous namespace)::minify_rows<unsigned char const*>(char const*, unsigned char const*, unsigned long)::{lambda()#1}&, unsigned long)  -      -            
+            ---main
+               __libc_start_call_main
+               __libc_start_main@@GLIBC_2.34
+               _start
+     2.92%  [.] mb::sample mb::measure_once<(anonymous namespace)::minify_rows<unsigned char const*>(char const*, unsigned char const*, unsigned long)::{lambda()#2}&>((anonymous namespace)::minify_rows<unsigned char const*>(char const*, unsigned char const*, unsigned long)::{lambda()#2}&, unsigned long)  -      -            
+            ---main.cold
+               __libc_start_call_main
+               __libc_start_main@@GLIBC_2.34
+               _start

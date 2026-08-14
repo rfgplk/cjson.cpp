@@ -8,11 +8,20 @@
 
 Two outputs:
 
-  * per-segment grouped bars — a "segment" is an op group (parse, extract-lazy,
-    extract-dom, serialize), corpora along x, one bar per library. `--by corpus`
+  * per-segment grouped bars — a "segment" is an op group (parse/index, parse/tree,
+    extract-lazy, extract-dom/index, extract-dom/tree, serialize/index,
+    serialize/tree), corpora along x, one bar per library. `--by corpus`
     flips it: one figure per corpus, ops along x.
   * `--headline` — one PNG, three panels side by side (GB/s, cyc/op, ins/op) for a
     single corpus (default github_events). This is the figure for a README.
+
+INDEX vs TREE — the bands never share a figure. cjson, simdjson-dom and yyjson build a
+flat index over the caller's bytes and defer string materialization and key lookup;
+glz::generic, rapidjson, boost.json and nlohmann build an owning mutable node tree, which
+costs several times the instructions no matter how fast the parser driving it is. Those
+are different products, not different speeds, and a single ranked bar chart over both
+asserts an ordering the numbers do not support. corpus_vs prints them as separate op
+groups so they land in separate figures here; `--headline-op` defaults to the index band.
 
 `--mode github` renders on GitHub's Primer dark canvas (#0d1117) instead of this
 project's own dark surface, so a PNG served to README.md under
@@ -60,7 +69,10 @@ def main():
                     metavar="CORPUS",
                     help="the hero figure: GB/s + cyc/op + ins/op side by side for one "
                          "corpus (default github_events)")
-    ap.add_argument("--headline-op", default="parse", help="op for --headline")
+    ap.add_argument("--headline-op", default="parse/index",
+                    help="op for --headline (default parse/index — the tape band; "
+                         "parse/tree is the owning-node-tree band and the two do not "
+                         "belong on one figure)")
     ap.add_argument("--mode", choices=MODES, default="light",
                     help="surface the figure is drawn for (github = Primer dark canvas)")
     ap.add_argument("--out", default="benches/charts", help="output directory")

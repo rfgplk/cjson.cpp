@@ -97,34 +97,72 @@ fast paths (SIMD kernels, `__builtin_memcpy` puns, abcmalloc arenas) sit behind
 
 ##### Benchmarks
 
+**Displayed as two separate categories** The current armada of json parsers is split in two:
+
+- cjson, `simdjson-dom` and yyjson build a flat **index** over the caller's bytes. Strings
+  are never materialized; cjson stores `{offset, length}` and unescapes on demand; objects
+  get no key index, lookup is a linear scan at access time; teardown is one `free`.
+- `glz::generic`, rapidjson, boost.json and nlohmann build an owning, mutable **tree**. Every
+  key and every string value is its own `std::string`, every array a vector that reallocs as
+  it grows, every object a map that builds a lookup index; teardown is a recursive
+  destructor walk.
+
+Ranking all eight parsers in one list is dubious, as such for correctness the two categories are charted separately.
+
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="benches/charts/headline-large-file.github.png">
-  <img alt="cjson vs yyjson, simdjson, rapidjson, glaze, boost.json and nlohmann -- full DOM parse of a 26MB file: throughput, cycles per op and instructions per op" src="benches/charts/headline-large-file.github.png">
+  <source media="(prefers-color-scheme: dark)" srcset="benches/charts/headline-github_events-parse_index.github.png">
+  <img alt="cjson vs simdjson-dom and yyjson -- index/tape parse of a 65KB document: throughput, cycles per op and instructions per op" src="benches/charts/headline-github_events-parse_index.github.png">
 </picture>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="benches/charts/headline-5MB.github.png">
-  <img alt="the same eight libraries on a 5 MB document: throughput, cycles per op and instructions per op" src="benches/charts/headline-5MB.github.png">
-</picture>
-
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="benches/charts/op-parse.gbps.github.png">
-  <img alt="cjson corpus benchmark -- parse (GB/s)" src="benches/charts/op-parse.gbps.github.png">
+  <source media="(prefers-color-scheme: dark)" srcset="benches/charts/headline-1MB-parse_index.github.png">
+  <img alt="the same index/tape builders on a 1 MB document: throughput, cycles per op and instructions per op" src="benches/charts/headline-1MB-parse_index.github.png">
 </picture>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="benches/charts/op-extract-dom.gbps.github.png">
-  <img alt="cjson corpus benchmark -- extract-dom (GB/s)" src="benches/charts/op-extract-dom.gbps.github.png">
-</picture>
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="benches/charts/op-serialize.gbps.github.png">
-  <img alt="cjson corpus benchmark -- serialize (GB/s)" src="benches/charts/op-serialize.gbps.github.png">
+  <source media="(prefers-color-scheme: dark)" srcset="benches/charts/headline-large-file-parse_index.github.png">
+  <img alt="the same index/tape builders on a 26 MB document: throughput, cycles per op and instructions per op" src="benches/charts/headline-large-file-parse_index.github.png">
 </picture>
 
-Full DOM parse throughput, **GB/s, higher is better**. AMD Ryzen 7 3700U, kernel 7.1.5,
-GCC 16.1.1, `taskset -c 0`, medians of 7. Every contender parses the same bytes in copy
-mode. `cjson-reuse` borrows a warm scratch; plain `cjson` allocates and frees per op.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="benches/charts/op-parse_index.gbps.github.png">
+  <img alt="cjson corpus benchmark -- parse, index/tape band (GB/s)" src="benches/charts/op-parse_index.gbps.github.png">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="benches/charts/op-parse_tree.gbps.github.png">
+  <img alt="cjson corpus benchmark -- parse, owning-tree band: glz::generic, rapidjson, boost.json, nlohmann (GB/s)" src="benches/charts/op-parse_tree.gbps.github.png">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="benches/charts/op-extract-dom_index.gbps.github.png">
+  <img alt="cjson corpus benchmark -- extract-dom, index/tape band (GB/s)" src="benches/charts/op-extract-dom_index.gbps.github.png">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="benches/charts/op-serialize_index.gbps.github.png">
+  <img alt="cjson corpus benchmark -- serialize, index/tape band (GB/s)" src="benches/charts/op-serialize_index.gbps.github.png">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="benches/charts/op-serialize_tree.gbps.github.png">
+  <img alt="cjson corpus benchmark -- serialize, owning-tree band (GB/s)" src="benches/charts/op-serialize_tree.gbps.github.png">
+</picture>
+
+Throughput, **GB/s, higher is better**. AMD Ryzen 7 3700U, kernel 7.1.7, GCC 16.1.1,
+`taskset -c 0`, medians of 7. Contender versions are recorded in the header of
+`benches/results/corpus_vs.txt`, which is committed alongside the charts so any figure
+here can be re-derived and diffed. Every contender parses the same bytes in copy mode, and every
+contender's object is compiled equivalently
+`-O3 -march=native -flto -ffat-lto-objects`.
+
+Rows say what they amortize. `cjson-reuse` borrows a warm scratch and `simdjson-dom(warm)`
+reuses its parser across reps; plain `cjson`, yyjson, rapidjson, `glz::generic` and
+boost.json allocate and free per op.
+
+`glz::generic` is named in full because the tier matters: it is Glaze's schema-less fallback
+tree, which its own documentation notes carries an allocation cost, and **not** its
+compile-time-reflected fast path. See the lazy chart below and `benches/lazy_vs.cpp`.
 
 Reproduce with `scripts/fetch_corpus && scripts/vsbuild benches/corpus_vs.cpp &&
 taskset -c 0 ./bin/corpus_vs`, and graph it with `scripts/chart_corpus` (`--mode github`
@@ -141,7 +179,7 @@ taskset -c 0 ./bin/corpus_vs`, and graph it with `scripts/chart_corpus` (`--mode
 Each x position is **N fields resolved from one document handle** on `sample/twitter.json`
 (632 KB, 100 records), N from 1 to 64; an index is amortized while a walk is computed N times.
 
-At **N=1** glz::lazy_json` touches **204 of 631,659 bytes (0.03%)** and returns, whereas cjson's `iterate` 
+At **N=1** `glz::lazy_json` touches **204 of 631,659 bytes (0.03%)** and returns, whereas cjson's `iterate` 
 reads and validates all of them.
 
 Reproduce with `scripts/vsbuild benches/lazy_vs.cpp && taskset -c 0 ./bin/lazy_vs`, and

@@ -84,15 +84,18 @@ IMPL_SLOT = {
     "yyjson": 2,              # aqua
     "yyjson-poolalc": 2,
     "simdjson-dom": 3,        # yellow
+    "simdjson-dom(warm)": 3,
     "simdjson-ondemand": 3,
     "simdjson": 3,
     "rapidjson": 4,           # magenta
     "glaze": 5,               # green
+    "glz::generic": 5,
     "glaze-lazy": 5,
     "glaze-lazyjson": 5,
     "glaze-getview": 5,
     "boost.json": 6,          # violet
     "nlohmann": 7,            # red
+    "nlohmann(alloc)": 7,
 }
 
 # github/* are Primer tokens: bgColor-default, fgColor-default, fgColor-muted,
@@ -114,6 +117,24 @@ def is_cjson(impl):
     # the same 5-char prefix rule mb::is_cjson_impl uses, so the highlighting here and
     # the verdict line the bench prints can never disagree
     return impl[:5] == "cjson"
+
+
+# corpus_vs names its op groups "<op>/<band>" — see the INDEX vs TREE banner at the top of
+# benches/corpus_vs.cpp. That suffix is the whole reason a tape build and an owning-tree
+# build never share a ranking, so a figure title spells it out instead of showing a slash.
+# the band reads as an adjective on the op, so the title stays one phrase — "index/tape
+# parse of twitter.json" rather than a string of em-dashes
+BAND_TEXT = {
+    "index": "index/tape",
+    "tree": "owning-tree",
+}
+
+
+def op_title(op):
+    head, sep, band = op.rpartition("/")
+    if sep and band in BAND_TEXT:
+        return f"{BAND_TEXT[band]} {head}"
+    return op
 
 
 def colour_for(impl, mode, fallback_order):
@@ -309,7 +330,8 @@ def draw(groups, key_name, series_name, metric, outdir, prefix, mode, note,
 
         ax.set_xticks(x)
         ax.set_xticklabels(keys, rotation=30, ha="right", fontsize=8.5)
-        ax.set_title(title_fmt.format(group=gname, metric=label), fontsize=11.5, pad=10)
+        ax.set_title(title_fmt.format(group=op_title(gname), metric=label),
+                     fontsize=11.5, pad=10)
         ax.grid(axis="y", color=GRID[mode], linewidth=1.0, alpha=1.0, zorder=0)
         ax.set_axisbelow(True)
         leg = ax.legend(fontsize=8, ncol=min(len(series), 4), loc="best",
@@ -333,8 +355,14 @@ def draw(groups, key_name, series_name, metric, outdir, prefix, mode, note,
 # the headline figure
 
 # the box the numbers came off, and the one asymmetry a reader has to know about
-SUBTITLE = ("AMD Ryzen 7 3700U · GCC 16.1.1 · taskset -c 0 · medians of 7 · "
-            "cjson-reuse borrows a warm scratch; every other row allocates per op")
+# Two lines, because one was running the full width at 8pt and reading as a wall.
+#
+# Rows carrying a warm marker say so in their own label — cjson-reuse borrows a warm
+# scratch, simdjson-dom(warm) reuses its parser. Naming only cjson's here (as this line
+# used to) asserted every other row was cold, which was never true of simdjson.
+SUBTITLE = ("AMD Ryzen 7 3700U · kernel 7.1.7 · GCC 16.1.1 · taskset -c 0 · medians of 7\n"
+            "every contender built -O3 -march=native -flto · rows marked (warm) reuse "
+            "state across reps; unmarked rows allocate and free per op")
 # The two right-hand panels count cycles:u / instructions:u — USER SPACE ONLY — while
 # GB/s is wall clock. An allocation-heavy row therefore looks better in cyc/op than it
 # does in GB/s, because its page-fault and mmap time lands in the kernel where the
@@ -346,7 +374,7 @@ FOOTNOTE = ("cyc/op and ins/op are user-space counters; GB/s is wall clock — r
 
 
 def draw_headline(rows, corpus, op, outdir, mode, prefix="",
-                  suptitle_fmt="cjson vs the field — full DOM {op} of {corpus}.json  ({size})",
+                  suptitle_fmt="cjson vs the field — {op} of {corpus}.json  ({size})",
                   subtitle=SUBTITLE, footnote=FOOTNOTE):
     """Three panels side by side on one PNG: GB/s, cyc/op, ins/op for one corpus.
 
@@ -374,7 +402,7 @@ def draw_headline(rows, corpus, op, outdir, mode, prefix="",
     # The header and footer are FIXED INCHES, not fractions: a four-bar figure is half
     # the height of an eight-bar one, and a fractional title band collides with the
     # subtitle at the short end.
-    fig_h = 0.52 * len(impls) + 2.9
+    fig_h = 0.52 * len(impls) + 3.1      # +0.2in over the one-line subtitle era
     fig, axes = plt.subplots(1, 3, figsize=(15.0, fig_h), facecolor=SURFACE[mode])
 
     for ax, metric in zip(axes, panels):
@@ -426,13 +454,22 @@ def draw_headline(rows, corpus, op, outdir, mode, prefix="",
         ax.set_axisbelow(True)
         ax.tick_params(axis="y", length=0)
 
-    fig.suptitle(suptitle_fmt.format(op=op, corpus=corpus, size=fmt_size(size)),
-                 fontsize=13.5, color=primary, y=1.0 - 0.32 / fig_h)
-    fig.text(0.5, 1.0 - 0.66 / fig_h, subtitle, fontsize=8, color=secondary, ha="center")
+    title = suptitle_fmt.format(op=op_title(op), corpus=corpus, size=fmt_size(size))
+    # a band cjson has no row in is not a cjson comparison, and must not be headlined as
+    # one — the tree band is glz::generic, rapidjson, boost.json and nlohmann against each
+    # other. Both call sites use this same lead-in, so strip it rather than thread a flag.
+    if not any(is_cjson(r["impl"]) for r in sel):
+        title = title.replace("cjson vs the field — ", "")
+    fig.suptitle(title, fontsize=13.5, color=primary, y=1.0 - 0.32 / fig_h)
+    fig.text(0.5, 1.0 - 0.60 / fig_h, subtitle, fontsize=8, color=secondary,
+             ha="center", va="top", linespacing=1.6)
     fig.text(0.5, 0.16 / fig_h, footnote, fontsize=7.5, color=secondary, ha="center")
-    fig.tight_layout(rect=(0, 0.34 / fig_h, 1, 1.0 - 0.86 / fig_h))
+    fig.tight_layout(rect=(0, 0.34 / fig_h, 1, 1.0 - 1.06 / fig_h))
 
-    path = os.path.join(outdir, f"{prefix}headline-{corpus}{SUFFIX[mode]}.png")
+    # the op is in the name: index-band and tree-band headlines are different figures and
+    # must not silently overwrite each other under one filename
+    op_tag = re.sub(r"[^A-Za-z0-9._-]+", "_", op)
+    path = os.path.join(outdir, f"{prefix}headline-{corpus}-{op_tag}{SUFFIX[mode]}.png")
     fig.savefig(path, dpi=150, facecolor=SURFACE[mode])
     plt.close(fig)
     return path

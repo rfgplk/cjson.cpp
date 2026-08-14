@@ -1,0 +1,107 @@
+# parse_bench  2026-08-04  host: AMD Ryzen 7 3700U with Radeon Vega Mobile Gfx  kernel 7.1.5-201.fc44.x86_64
+# tree: 71fac80 (+39 dirty files)  build: duck/vsbuild --perf --fp --no-ssp --no-lto (vs TUs: -Ofast)
+
+   size(B)  op                          impl                cyc/op       IPC    bmiss%
+--------------------------------------------------------------------------------------
+       628  parse/owning                cjson-scalar       1397.17      2.47      0.00
+       628  parse/scratch               cjson-scalar       1444.50      2.24      0.01
+       628  parse/reuse                 cjson-scalar       1138.20      2.47      0.00
+       628  validate                    cjson-scalar       1127.13      2.38      0.00
+       628  stage1                      cjson-scalar        730.79      2.42      0.00
+     57683  parse/owning                cjson-scalar     106742.06      2.71      0.73
+     57683  parse/scratch               cjson-scalar     112501.32      2.57      0.75
+     57683  parse/reuse                 cjson-scalar     104535.67      2.76      0.73
+     57683  validate                    cjson-scalar      85780.54      2.78      0.77
+     57683  stage1                      cjson-scalar      50993.40      2.39      0.32
+    255152  parse/owning                cjson-scalar     590681.22      2.02      1.26
+    255152  parse/scratch               cjson-scalar     489837.25      2.43      1.13
+    255152  parse/reuse                 cjson-scalar     504126.78      2.36      1.09
+    255152  validate                    cjson-scalar     358358.03      2.75      1.24
+    255152  stage1                      cjson-scalar     218050.81      2.39      2.27
+    631659  parse/owning                cjson-scalar    1761037.00      1.92      2.48
+    631659  parse/scratch               cjson-scalar    1771393.63      1.91      2.38
+    631659  parse/reuse                 cjson-scalar    1452025.81      2.33      2.03
+    631659  validate                    cjson-scalar    1502848.03      1.87      3.15
+    631659  stage1                      cjson-scalar     665996.00      2.27      4.14
+   1026294  parse/owning                cjson-scalar    2461810.81      1.94      1.79
+   1026294  parse/scratch               cjson-scalar    2358561.66      2.03      1.70
+   1026294  parse/reuse                 cjson-scalar    2366106.78      2.02      1.59
+   1026294  validate                    cjson-scalar    1791171.88      2.21      1.84
+   1026294  stage1                      cjson-scalar     901597.38      2.32      5.41
+   5131466  parse/owning                cjson-scalar   13099339.53      1.82      1.96
+   5131466  parse/scratch               cjson-scalar   12882119.50      1.85      1.88
+   5131466  parse/reuse                 cjson-scalar   13050477.63      1.83      1.74
+   5131466  validate                    cjson-scalar    8647715.34      2.29      2.08
+   5131466  stage1                      cjson-scalar    5053660.56      2.07      6.70
+  26141344  parse/owning                cjson-scalar   79936088.69      1.74      3.77
+  26141344  parse/scratch               cjson-scalar   76134081.78      1.82      3.69
+  26141344  parse/reuse                 cjson-scalar   67176693.78      2.06      3.45
+  26141344  validate                    cjson-scalar   61585938.63      2.00      3.42
+  26141344  stage1                      cjson-scalar   33758880.38      1.80     11.08
+    631659  stage2/poolcopy             cjson-scalar      79664.44      0.81      0.12
+    631659  stage2/copy+build           cjson-scalar     842114.31      2.22      1.13
+   5131466  stage2/poolcopy             cjson-scalar     995616.34      0.47      0.05
+   5131466  stage2/copy+build           cjson-scalar    6565758.94      2.04      0.82
+   1048475  stage2/build-numeric        cjson-scalar   11687377.03      1.88      4.04
+
+## perf stat (bin/parse_bench )
+ Performance counter stats for 'bin/parse_bench':
+
+   102,274,681,106      cycles:u                                                                (13.45%)
+   178,809,738,065      instructions:u                                                          (13.51%)
+    22,674,120,089      branches:u                                                              (13.49%)
+       794,218,401      branch-misses:u                                                         (13.46%)
+     5,132,475,013      cache-references:u                                                      (13.51%)
+       101,704,679      cache-misses:u                                                          (13.54%)
+     2,396,987,900      L1-dcache-load-misses:u                                                 (13.52%)
+        58,455,518      dTLB-load-misses:u                                                      (13.44%)
+         8,302,947      page-faults:u                                                         
+
+     115.071306620 seconds time elapsed
+
+      54.319549000 seconds user
+      42.793903000 seconds sys
+
+
+
+## hotspots (flat self%, --call-graph fp, -F 997)
+    48.37%  [.] long cjson::__scan::__index_input<true>(unsigned char const*, unsigned long, unsigned int*, cjson::opts, bool) [clone .isra.0]                                                              -      -            
+             --7.20%--mb::sample mb::measure_once<main::{lambda()#1}&>(main::{lambda()#1}&, unsigned long)
+                       mb::row mb::bench_one<main::{lambda()#1}>(char const*, char const*, unsigned long, unsigned long, main::{lambda()#1}&&, unsigned long) [clone .constprop.0]
+                       main
+                       __libc_start_call_main
+                       __libc_start_main@@GLIBC_2.34
+                       _start
+    19.82%  [.] long cjson::__parse::build_t<false, false>(unsigned char*, unsigned long, unsigned int const*, long, cjson::opts, cjson::__parse::arena&, unsigned long&, cjson::wbounds&) [clone .isra.0]  -      -            
+             --4.54%--mb::sample mb::measure_once<main::{lambda()#1}&>(main::{lambda()#1}&, unsigned long)
+                       mb::row mb::bench_one<main::{lambda()#1}>(char const*, char const*, unsigned long, unsigned long, main::{lambda()#1}&&, unsigned long) [clone .constprop.0]
+                       main
+                       __libc_start_call_main
+                       __libc_start_main@@GLIBC_2.34
+                       _start
+     9.45%  [.] cjson::__num::read_number(unsigned char const*, unsigned long, unsigned long, cjson::value&)                                                                                                -      -            
+             --9.30%--long cjson::__parse::build_t<false, false>(unsigned char*, unsigned long, unsigned int const*, long, cjson::opts, cjson::__parse::arena&, unsigned long&, cjson::wbounds&) [clone .isra.0]
+                        --1.53%--mb::sample mb::measure_once<main::{lambda()#1}&>(main::{lambda()#1}&, unsigned long)
+                                  mb::row mb::bench_one<main::{lambda()#1}>(char const*, char const*, unsigned long, unsigned long, main::{lambda()#1}&&, unsigned long) [clone .constprop.0]
+                                  main
+                                  __libc_start_call_main
+                                  __libc_start_main@@GLIBC_2.34
+                                  _start
+     5.53%  [.] cjson::__parse::validate_indexes(unsigned char const*, unsigned long, unsigned int const*, long, cjson::opts, unsigned long&)                                                               -      -            
+             --5.43%--mb::sample mb::measure_once<main::{lambda()#4}&>(main::{lambda()#4}&, unsigned long)
+                       main
+                       __libc_start_call_main
+                       __libc_start_main@@GLIBC_2.34
+                       _start
+     3.72%  [.] micron::__memcpy_large(unsigned char*, unsigned char const*, unsigned long) [clone .isra.0]                                                                                                 -      -            
+             --1.43%--mb::sample mb::measure_once<main::{lambda()#3}&>(main::{lambda()#3}&, unsigned long)
+                       mb::row mb::bench_one<main::{lambda()#3}>(char const*, char const*, unsigned long, unsigned long, main::{lambda()#3}&&, unsigned long) [clone .constprop.0]
+                       main
+                       __libc_start_call_main
+                       __libc_start_main@@GLIBC_2.34
+                       _start
+     3.54%  [k] 0xffffffffb6a01280                                                                                                                                                                          -      -            
+             --2.11%--micron::__memcpy_large(unsigned char*, unsigned char const*, unsigned long) [clone .isra.0]
+                        --1.00%--mb::sample mb::measure_once<main::{lambda()#2}&>(main::{lambda()#2}&, unsigned long)
+                                  mb::row mb::bench_one<main::{lambda()#2}>(char const*, char const*, unsigned long, unsigned long, main::{lambda()#2}&&, unsigned long) [clone .constprop.0]
+                                  main

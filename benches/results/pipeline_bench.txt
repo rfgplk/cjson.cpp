@@ -1,0 +1,79 @@
+# pipeline_bench  2026-08-04  host: AMD Ryzen 7 3700U with Radeon Vega Mobile Gfx  kernel 7.1.5-201.fc44.x86_64
+# tree: 71fac80 (+36 dirty files)  build: duck/vsbuild --perf --fp --no-ssp --no-lto (vs TUs: -Ofast)
+
+   size(B)  op                          impl                cyc/op       IPC    bmiss%
+--------------------------------------------------------------------------------------
+       189  req->resp/hot               cjson              3697.42      1.66      0.23
+       189  req->resp/cold              cjson              2867.94      1.63      0.15
+       189  req->resp/dom               cjson              3384.45      1.70      0.29
+       974  req->resp/hot               cjson             13954.09      1.73      0.23
+       974  req->resp/cold              cjson              9525.55      1.65      0.33
+       974  req->resp/dom               cjson             15110.53      1.71      0.70
+      4044  req->resp/hot               cjson             57121.12      1.64      0.32
+      4044  req->resp/cold              cjson             35501.12      1.64      0.49
+      4044  req->resp/dom               cjson             64880.27      1.59      0.77
+     16328  req->resp/hot               cjson            237709.49      1.53      0.35
+     16328  req->resp/cold              cjson            148346.61      1.51      0.58
+     16328  req->resp/dom               cjson            279938.07      1.46      0.89
+
+## perf stat (bin/pipeline_bench )
+ Performance counter stats for 'bin/pipeline_bench':
+
+     4,854,485,160      cycles:u                                                                (12.66%)
+     8,151,499,720      instructions:u                                                          (12.60%)
+     1,656,477,687      branches:u                                                              (12.60%)
+         7,111,331      branch-misses:u                                                         (12.68%)
+        75,140,208      cache-references:u                                                      (12.70%)
+         4,610,787      cache-misses:u                                                          (12.74%)
+        23,982,780      L1-dcache-load-misses:u                                                 (12.70%)
+           147,356      dTLB-load-misses:u                                                      (12.66%)
+               267      page-faults:u                                                         
+
+       3.169541423 seconds time elapsed
+
+       2.986823000 seconds user
+       0.029510000 seconds sys
+
+
+
+## hotspots (flat self%, --call-graph fp, -F 997)
+    16.48%  [.] cjson::cur::operator[](micron::raw_slice<char const>) const                                                                                                                                                                               -      -            
+             --8.23%--main::{lambda()#2}::operator()() const
+                       mb::sample mb::measure_once<main::{lambda()#2}&>(main::{lambda()#2}&, unsigned long)
+                       main.cold
+                       __libc_start_call_main
+                       __libc_start_main@@GLIBC_2.34
+                       _start
+    14.73%  [.] cjson::__scan::flatten64(unsigned int*, unsigned int, unsigned long)                                                                                                                                                                      -      -            
+             --4.25%--mb::sample mb::measure_once<main::{lambda()#2}&>(main::{lambda()#2}&, unsigned long)
+                       main.cold
+                       __libc_start_call_main
+                       __libc_start_main@@GLIBC_2.34
+                       _start
+    13.28%  [.] main::{lambda()#3}::operator()() const                                                                                                                                                                                                    -      -            
+             --13.16%--mb::sample mb::measure_once<main::{lambda()#3}&>(main::{lambda()#3}&, unsigned long)
+                       main.cold
+                       __libc_start_call_main
+                       __libc_start_main@@GLIBC_2.34
+                       _start
+    11.35%  [.] cjson::__num::read_number(unsigned char const*, unsigned long, unsigned long, cjson::value&)                                                                                                                                              -      -            
+             --9.74%--main::{lambda()#3}::operator()() const
+                       mb::sample mb::measure_once<main::{lambda()#3}&>(main::{lambda()#3}&, unsigned long)
+                       main.cold
+                       __libc_start_call_main
+                       __libc_start_main@@GLIBC_2.34
+                       _start
+    10.48%  [.] main::{lambda()#1}::operator()() const                                                                                                                                                                                                    -      -            
+            ---mb::sample mb::measure_once<main::{lambda()#1}&>(main::{lambda()#1}&, unsigned long)
+               main
+               __libc_start_call_main
+               __libc_start_main@@GLIBC_2.34
+               _start
+     8.60%  [.] cjson::cur::skip(long&) const                                                                                                                                                                                                             -      -            
+             --2.31%--mb::sample mb::measure_once<main::{lambda()#1}&>(main::{lambda()#1}&, unsigned long)
+                       main
+                       __libc_start_call_main
+                       __libc_start_main@@GLIBC_2.34
+                       _start
+     5.54%  [.] cjson::__scan::block_masks cjson::__scan::classify64<true>(unsigned char const*, cjson::__scan::utf8_state_amd64&)                                                                                                                        -      -            
+             --1.38%--main::{lambda()#1}::operator()() const

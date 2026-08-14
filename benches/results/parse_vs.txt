@@ -1,0 +1,56 @@
+   size(B)   op                            impl                            GB/s          cyc/op          ins/op         IPC      bmiss%
+---------------------------------------------------------------------------------------------------------------------------------------
+### 64kb  (57683 B)
+     57683   parse                         cjson                           2.12        83364.82       270520.65        3.25        0.11
+     57683   parse                         cjson-reuse                     2.75        75809.44       270025.71        3.56        0.10
+     57683   parse                         yyjson                          1.43       153369.94       285504.47        1.86        0.76
+     57683   parse                         simdjson-dom                    2.39        91805.31       233020.43        2.54        1.11
+  -> cjson (best: cjson-reuse) is 1.15x GB/s, 1.21x cyc/op vs best competitor (simdjson-dom) -- 2.75 vs 2.39 GB/s
+
+     57683   parse+touch-root              simdjson-ondemand               6.10        34866.86        96409.42        2.77        0.73
+
+### 128KB  (255152 B)
+    255152   parse                         cjson                           1.34       346091.34      1121215.53        3.24        0.53
+    255152   parse                         cjson-reuse                     2.90       329534.22      1120371.66        3.40        0.47
+    255152   parse                         yyjson                          1.60       614305.44      1121561.19        1.83        0.76
+    255152   parse                         simdjson-dom                    2.42       390686.19       966589.03        2.47        1.62
+  -> cjson (best: cjson-reuse) is 1.20x GB/s, 1.19x cyc/op vs best competitor (simdjson-dom) -- 2.90 vs 2.42 GB/s
+
+    255152   parse+touch-root              simdjson-ondemand               5.90       157536.09       418380.97        2.66        3.37
+
+### twitter  (631659 B)
+    631659   parse                         cjson                           0.65      1269262.75      3283714.53        2.59        1.69
+    631659   parse                         cjson-reuse                     2.12      1112897.31      3282136.94        2.95        1.36
+    631659   parse                         yyjson                          0.59      1746570.06      2771836.22        1.59        1.39
+    631659   parse                         simdjson-dom                    2.07      1115787.56      2697691.28        2.42        1.96
+  -> cjson (best: cjson-reuse) is 1.03x GB/s, 1.00x cyc/op vs best competitor (simdjson-dom) -- 2.12 vs 2.07 GB/s
+
+    631659   parse+touch-root              simdjson-ondemand               4.63       496297.03      1232051.06        2.48        4.49
+
+### 1MB  (1026294 B)
+   1026294   parse                         cjson                           0.75      1631795.38      4505291.34        2.76        1.19
+   1026294   parse                         cjson-reuse                     2.67      1385810.28      4503587.91        3.25        0.97
+   1026294   parse                         yyjson                          0.63      2751774.63      4509211.09        1.64        0.81
+   1026294   parse                         simdjson-dom                    2.17      1721089.81      3886123.38        2.26        2.23
+  -> cjson (best: cjson-reuse) is 1.23x GB/s, 1.24x cyc/op vs best competitor (simdjson-dom) -- 2.67 vs 2.17 GB/s
+
+   1026294   parse+touch-root              simdjson-ondemand               5.42       682016.13      1682451.16        2.47        6.57
+
+### 5MB  (5131466 B)
+   5131466   parse                         cjson                           0.71      9376828.25     22522397.50        2.40        1.43
+   5131466   parse                         cjson-reuse                     1.93      9592085.03     22518173.19        2.35        1.20
+   5131466   parse                         yyjson                          0.61     14685393.16     22625195.66        1.54        0.82
+   5131466   parse                         simdjson-dom                    1.36     11480157.81     19514523.78        1.70        2.47
+  -> cjson (best: cjson-reuse) is 1.42x GB/s, 1.20x cyc/op vs best competitor (simdjson-dom) -- 1.93 vs 1.36 GB/s
+
+   5131466   parse+touch-root              simdjson-ondemand               4.75      3556629.94      8413450.00        2.37        7.65
+
+### large-file  (26141344 B)
+  26141344   parse                         cjson                           0.59     58016346.38    135317081.53        2.33        3.17
+  26141344   parse                         cjson-reuse                     1.47     52779328.84    135299332.47        2.56        2.91
+  26141344   parse                         yyjson                          0.50     90549344.97    125150842.88        1.38        2.31
+  26141344   parse                         simdjson-dom                    1.26     62862778.16    116972959.97        1.86        3.36
+  -> cjson (best: cjson-reuse) is 1.17x GB/s, 1.19x cyc/op vs best competitor (simdjson-dom) -- 1.47 vs 1.26 GB/s
+
+  26141344   parse+touch-root              simdjson-ondemand               4.40     20262885.31     46088620.94        2.27        9.90
+

@@ -1,0 +1,78 @@
+   size(B)   op                            impl                            GB/s          cyc/op          ins/op         IPC      bmiss%
+---------------------------------------------------------------------------------------------------------------------------------------
+### 64kb  (57683 B)
+     57683   write/minify                  cjson                           1.77        91253.74       217441.51        2.38        1.29
+     57683   write/minify                  yyjson                          3.03        73665.03       173203.43        2.35        2.45
+  -> cjson is 0.58x GB/s, 0.81x cyc/op vs best competitor (yyjson) -- 1.77 vs 3.03 GB/s
+
+     57683   write/pretty                  cjson                           1.70       129273.67       257053.51        1.99        1.11
+     57683   write/pretty                  yyjson                          2.16       101407.22       227195.46        2.24        2.23
+  -> cjson is 0.79x GB/s, 0.78x cyc/op vs best competitor (yyjson) -- 1.70 vs 2.16 GB/s
+
+     57683   write/minify-into             cjson                           2.41        91243.07       217189.46        2.38        1.29
+     57683   write/minify-into             yyjson-poolalc                  3.16        68939.38       165295.44        2.40        2.49
+  -> cjson is 0.76x GB/s, 0.76x cyc/op vs best competitor (yyjson-poolalc) -- 2.41 vs 3.16 GB/s
+
+     57683   minify/text                   cjson                           2.16       101380.08       299571.58        2.95        0.79
+     57683   minify/text                   simdjson                        7.01        29595.38        91753.43        3.10        0.16
+  -> cjson is 0.31x GB/s, 0.29x cyc/op vs best competitor (simdjson) -- 2.16 vs 7.01 GB/s
+
+     57683   minify/roundtrip              yyjson                          0.73       218031.83       459055.39        2.11        1.32
+
+### twitter  (631659 B)
+    631659   write/minify                  cjson                           1.25       875919.31      1885230.44        2.15        1.01
+    631659   write/minify                  yyjson                          1.30       793908.56      1856382.78        2.34        1.28
+  -> cjson is 0.96x GB/s, 0.91x cyc/op vs best competitor (yyjson) -- 1.25 vs 1.30 GB/s
+
+    631659   write/pretty                  cjson                           0.78      1361621.03      2310802.16        1.70        1.42
+    631659   write/pretty                  yyjson                          0.82      1208636.50      2540863.59        2.10        1.53
+  -> cjson is 0.95x GB/s, 0.89x cyc/op vs best competitor (yyjson) -- 0.78 vs 0.82 GB/s
+
+    631659   write/minify-into             cjson                           3.06       790414.41      1884456.22        2.38        0.85
+    631659   write/minify-into             yyjson-poolalc                  3.23       737321.53      1855763.19        2.52        1.10
+  -> cjson is 0.95x GB/s, 0.93x cyc/op vs best competitor (yyjson-poolalc) -- 3.06 vs 3.23 GB/s
+
+    631659   minify/text                   cjson                           0.80      2243764.31      4751298.69        2.12        3.25
+    631659   minify/text                   simdjson                        6.21       344543.28      1010982.06        2.93        3.03
+  -> cjson is 0.13x GB/s, 0.15x cyc/op vs best competitor (simdjson) -- 0.80 vs 6.21 GB/s
+
+    631659   minify/roundtrip              yyjson                          0.39      2626772.25      4628413.66        1.76        1.73
+
+### 1MB  (1026294 B)
+   1026294   write/minify                  cjson                           1.08      1564566.88      3477075.72        2.22        1.38
+   1026294   write/minify                  yyjson                          0.78      1417749.53      2773151.72        1.96        2.57
+  -> cjson is 1.38x GB/s, 0.91x cyc/op vs best competitor (yyjson) -- 1.08 vs 0.78 GB/s
+
+   1026294   write/pretty                  cjson                           0.84      2213987.94      4113767.75        1.86        1.17
+   1026294   write/pretty                  yyjson                          0.95      1618330.09      3430827.03        2.12        2.34
+  -> cjson is 0.88x GB/s, 0.73x cyc/op vs best competitor (yyjson) -- 0.84 vs 0.95 GB/s
+
+   1026294   write/minify-into             cjson                           2.63      1448413.38      3476003.38        2.40        1.30
+   1026294   write/minify-into             yyjson-poolalc                  3.38      1115234.34      2653690.28        2.38        2.49
+  -> cjson is 0.78x GB/s, 0.77x cyc/op vs best competitor (yyjson-poolalc) -- 2.63 vs 3.38 GB/s
+
+   1026294   minify/text                   cjson                           1.19      2292645.38      5885440.72        2.57        1.60
+   1026294   minify/text                   simdjson                        6.34       531402.53      1627855.13        3.06        0.01
+  -> cjson is 0.19x GB/s, 0.23x cyc/op vs best competitor (simdjson) -- 1.19 vs 6.34 GB/s
+
+   1026294   minify/roundtrip              yyjson                          0.35      3897927.31      7282297.06        1.87        1.34
+
+### 5MB  (5131466 B)
+   5131466   write/minify                  cjson                           0.96      7890240.00     17377830.09        2.20        1.38
+   5131466   write/minify                  yyjson                          0.69      8127372.13     13730501.91        1.69        2.58
+  -> cjson is 1.38x GB/s, 1.03x cyc/op vs best competitor (yyjson) -- 0.96 vs 0.69 GB/s
+
+   5131466   write/pretty                  cjson                           0.73     11117784.97     20562581.72        1.85        1.18
+   5131466   write/pretty                  yyjson                          0.75      8410880.78     17150486.69        2.04        2.40
+  -> cjson is 0.96x GB/s, 0.76x cyc/op vs best competitor (yyjson) -- 0.73 vs 0.75 GB/s
+
+   5131466   write/minify-into             cjson                           2.22      7361402.28     17375477.28        2.36        1.30
+   5131466   write/minify-into             yyjson-poolalc                  2.82      5671921.78     13267243.78        2.34        2.49
+  -> cjson is 0.79x GB/s, 0.77x cyc/op vs best competitor (yyjson-poolalc) -- 2.22 vs 2.82 GB/s
+
+   5131466   minify/text                   cjson                           1.01     13312886.09     29419402.44        2.21        1.63
+   5131466   minify/text                   simdjson                        4.82      3008800.78      8138464.03        2.70        0.00
+  -> cjson is 0.21x GB/s, 0.23x cyc/op vs best competitor (simdjson) -- 1.01 vs 4.82 GB/s
+
+   5131466   minify/roundtrip              yyjson                          0.33     21233364.56     36355099.94        1.71        1.34
+

@@ -26,6 +26,19 @@ YY_BUILD=comparison/.yyjson-build
 GLZ_SRC=../../Git/glaze
 GLZ_VENDOR=comparison/.glaze-vendor
 
+# Every contender object is built WITH lto, because the bench tu is.
+#
+# cjson is a header, so it inlines straight into the timing lambda and then gets -flto on
+# top; every competitor is reached through an opaque extern "C" call into a pre-compiled
+# object. -flto on the link line alone cannot cross into objects that were compiled
+# without it, so the competitors were getting -O3-in-a-box while cjson got whole-program
+# codegen. That gap is invisible on a 26 MB parse and is not invisible at ~1000 cyc/op on
+# the lazy and 64kb rows.
+#
+# -ffat-lto-objects so the objects still carry ordinary code: the archive and the shim
+# .o files stay usable by a plain link if the plugin is ever unavailable.
+LTOFLAGS="-flto -ffat-lto-objects"
+
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # yyjson
 
@@ -33,8 +46,10 @@ if [ ! -f "$YY_BUILD/libyyjson.a" ]; then
   echo "vsbuild: building yyjson into $YY_BUILD ..."
   mkdir -p "$YY_BUILD"
   cp "$YY_SRC/src/yyjson.h" "$YY_BUILD/"
-  /usr/bin/gcc -O3 -march=native -c "$YY_SRC/src/yyjson.c" -o "$YY_BUILD/yyjson.o"
-  ar rcs "$YY_BUILD/libyyjson.a" "$YY_BUILD/yyjson.o"
+  /usr/bin/gcc $LTOFLAGS -O3 -march=native -c "$YY_SRC/src/yyjson.c" -o "$YY_BUILD/yyjson.o"
+  # gcc-ar, not ar: the archive index has to be built through the lto plugin or the
+  # linker cannot see the ir in the member objects
+  gcc-ar rcs "$YY_BUILD/libyyjson.a" "$YY_BUILD/yyjson.o"
 fi
 mkdir -p libs
 if [ ! -f libs/libyyjson.a ] || [ "$YY_BUILD/libyyjson.a" -nt libs/libyyjson.a ]; then
@@ -54,7 +69,7 @@ fi
 
 if [ ! -f "$SJ_BUILD/simdjson.o" ]; then
   echo "vsbuild: compiling simdjson.o ..."
-  /usr/bin/g++ -std=c++20 -O3 -march=native -I"$SJ_BUILD" -c "$SJ_BUILD/simdjson.cpp" -o "$SJ_BUILD/simdjson.o"
+  /usr/bin/g++ -std=c++20 $LTOFLAGS -O3 -march=native -I"$SJ_BUILD" -c "$SJ_BUILD/simdjson.cpp" -o "$SJ_BUILD/simdjson.o"
 fi
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -82,7 +97,7 @@ shim() {
   _obj="$SJ_BUILD/$_name.o"
   if [ ! -f "$_obj" ] || [ "$_srcf" -nt "$_obj" ]; then
     echo "vsbuild: compiling $_name.o ..."
-    /usr/bin/g++ "-std=$_std" -O3 -march=native "$@" -c "$_srcf" -o "$_obj"
+    /usr/bin/g++ "-std=$_std" $LTOFLAGS -O3 -march=native "$@" -c "$_srcf" -o "$_obj"
   fi
 }
 

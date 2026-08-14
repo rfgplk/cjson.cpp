@@ -1,0 +1,610 @@
+# corpus_vs — cjson vs the field, index band and tree band printed separately.
+#
+# host    AMD Ryzen 7 3700U · kernel 7.1.7-200.fc44.x86_64 · g++ (GCC) 16.1.1 20260515
+# run     taskset -c 0 · medians of 7 · cycles:u / instructions:u (user space only)
+#
+# contenders — every object built -O3 -march=native -flto -ffat-lto-objects;
+# the bench tu adds -Ofast -std=c++26 and inlines cjson into the timing lambda.
+#   glaze      8.0.0    2f6f5dc   (glz::generic for the tree rows)
+#   yyjson              9365ddc
+#   simdjson            8c06c44
+#   nlohmann   3.12.0   (system)
+#   rapidjson  1.1.0    (system, kParseFullPrecisionFlag)
+#   boost.json 1.90.0   (system, monotonic_resource on load/serialize)
+#
+# regenerate: scripts/vsbuild benches/corpus_vs.cpp && taskset -c 0 ./bin/corpus_vs
+#
+   size(B)   op                            impl                            GB/s          cyc/op          ins/op         IPC      bmiss%
+---------------------------------------------------------------------------------------------------------------------------------------
+### 64kb  (57683 B)
+     57683   parse/index                   cjson                           2.59        77284.71       270252.65        3.50        0.13
+     57683   parse/index                   cjson-reuse                     2.69        77030.75       269759.65        3.50        0.13
+     57683   parse/index                   yyjson                          1.82       116005.71       275788.47        2.38        0.72
+     57683   parse/index                   simdjson-dom(warm)              2.29        91410.72       226577.44        2.48        1.16
+  -> cjson (best: cjson-reuse) is 1.18x GB/s, 1.19x cyc/op vs best competitor (simdjson-dom(warm)) -- 2.69 vs 2.29 GB/s
+
+     57683   parse/tree                    rapidjson                       0.34       625639.64      1799748.64        2.88        0.27
+     57683   parse/tree                    glz::generic                    0.41       515420.82      1300073.58        2.52        0.63
+     57683   parse/tree                    boost.json                      0.35       607869.88      1561933.25        2.57        0.87
+     57683   parse/tree                    nlohmann                        0.09      2350253.35      4994121.75        2.13        0.72
+
+     57683   serialize/index               cjson                           2.39        90405.56       215757.49        2.39        1.33
+     57683   serialize/index               cjson-reuse                     2.38        90398.79       215493.47        2.38        1.34
+     57683   serialize/index               yyjson                          3.18        67106.25       166515.41        2.48        2.80
+  -> cjson is 0.75x GB/s, 0.74x cyc/op vs best competitor (yyjson) -- 2.39 vs 3.18 GB/s
+
+     57683   serialize/tree                rapidjson                       0.39       565960.26      1225249.60        2.16        0.38
+     57683   serialize/tree                glz::generic                    1.80       120817.74       286060.44        2.37        2.23
+     57683   serialize/tree                boost.json                      1.12       191383.30       484161.45        2.53        1.59
+     57683   serialize/tree                nlohmann(alloc)                 0.24       888542.78      2161093.67        2.43        1.82
+
+### twitter  (631659 B)
+    631659   parse/index                   cjson                           0.66      1261339.91      3224447.50        2.56        1.76
+    631659   parse/index                   cjson-reuse                     2.15      1094048.69      3222950.75        2.95        1.35
+    631659   parse/index                   yyjson                          0.61      1591297.84      2626303.78        1.65        1.48
+    631659   parse/index                   simdjson-dom(warm)              2.18      1069629.97      2597454.28        2.43        1.96
+  -> cjson (best: cjson-reuse) is 0.99x GB/s, 0.98x cyc/op vs best competitor (simdjson-dom(warm)) -- 2.15 vs 2.18 GB/s
+
+    631659   parse/tree                    rapidjson                       0.30      6478056.75     16434442.38        2.54        0.91
+    631659   parse/tree                    glz::generic                    0.29      8238048.56     15594749.59        1.89        2.01
+    631659   parse/tree                    boost.json                      0.25      9512660.16     18785965.47        1.98        1.42
+    631659   parse/tree                    nlohmann                        0.08     30508305.66     54596206.97        1.79        1.27
+
+    631659   extract-lazy                  cjson-ondemand                  3.48       641168.69      1528222.09        2.38        3.90
+    631659   extract-lazy                  simdjson-ondemand               4.51       497081.75      1233772.09        2.48        4.19
+    631659   extract-lazy                  glaze-lazy                      1.26         3149.67         7401.01        2.35        0.34
+    631659   extract-lazy                  glaze-lazyjson                  1.73         2406.03         5693.01        2.37        0.64
+  -> cjson (best: cjson-ondemand) is 0.77x GB/s, 0.78x cyc/op vs best competitor (simdjson-ondemand) -- 3.48 vs 4.51 GB/s
+
+    631659   extract-dom/index             cjson-dom                       2.02      1122672.06      3224036.25        2.87        1.36
+    631659   extract-dom/index             yyjson                          0.60      1589631.94      2627187.50        1.65        1.50
+  -> cjson (best: cjson-dom) is 3.38x GB/s, 1.42x cyc/op vs best competitor (yyjson) -- 2.02 vs 0.60 GB/s
+
+    631659   extract-dom/tree              rapidjson                       0.30      6613476.91     16437358.41        2.49        0.91
+    631659   extract-dom/tree              boost.json                      0.23     10198134.56     18643074.94        1.83        1.50
+    631659   extract-dom/tree              nlohmann                        0.08     29887565.38     54560750.34        1.83        1.27
+
+    631659   serialize/index               cjson                           1.06       838335.81      1858545.59        2.22        1.09
+    631659   serialize/index               cjson-reuse                     2.33       755815.13      1857810.22        2.46        0.90
+    631659   serialize/index               yyjson                          1.09       802888.50      1808906.78        2.25        1.39
+  -> cjson (best: cjson-reuse) is 2.13x GB/s, 1.06x cyc/op vs best competitor (yyjson) -- 2.33 vs 1.09 GB/s
+
+    631659   serialize/tree                rapidjson                       0.37      4683656.94     10048326.50        2.15        0.84
+    631659   serialize/tree                glz::generic                    1.25      1361224.03      3087490.28        2.27        1.73
+    631659   serialize/tree                boost.json                      0.96      1796387.72      4946679.47        2.75        1.42
+    631659   serialize/tree                nlohmann(alloc)                 0.18      8485327.00     15946133.22        1.88        1.44
+
+### 1MB  (1026294 B)
+   1026294   parse/index                   cjson                           0.74      1622508.81      4500245.84        2.77        1.20
+   1026294   parse/index                   cjson-reuse                     2.52      1426733.75      4498725.81        3.15        0.98
+   1026294   parse/index                   yyjson                          0.74      2048839.75      4313079.81        2.11        0.82
+   1026294   parse/index                   simdjson-dom(warm)              2.27      1590578.22      3774021.44        2.37        2.21
+  -> cjson (best: cjson-reuse) is 1.11x GB/s, 1.11x cyc/op vs best competitor (simdjson-dom(warm)) -- 2.52 vs 2.27 GB/s
+
+   1026294   parse/tree                    rapidjson                       0.29     10535874.03     29893703.63        2.84        0.28
+   1026294   parse/tree                    glz::generic                    0.39      9446714.09     22169959.63        2.35        0.66
+   1026294   parse/tree                    boost.json                      0.34     11165004.00     26190387.44        2.35        0.64
+   1026294   parse/tree                    nlohmann                        0.08     44070648.84     84835736.31        1.93        0.50
+
+   1026294   serialize/index               cjson                           0.97      1525879.78      3449604.59        2.26        1.43
+   1026294   serialize/index               cjson-reuse                     2.21      1424169.28      3448719.47        2.42        1.37
+   1026294   serialize/index               yyjson                          0.70      1340512.38      2666528.78        1.99        2.90
+  -> cjson (best: cjson-reuse) is 3.16x GB/s, 0.94x cyc/op vs best competitor (yyjson) -- 2.21 vs 0.70 GB/s
+
+   1026294   serialize/tree                rapidjson                       0.34      9588525.94     19704567.34        2.06        0.38
+   1026294   serialize/tree                glz::generic                    1.32      2385618.56      4592180.59        1.92        2.23
+   1026294   serialize/tree                boost.json                      1.02      3092808.28      7722056.88        2.50        1.62
+   1026294   serialize/tree                nlohmann(alloc)                 0.14     19418581.25     34718428.38        1.79        1.83
+
+### 5MB  (5131466 B)
+   5131466   parse/index                   cjson                           0.73      9344764.31     22498143.63        2.41        1.44
+   5131466   parse/index                   cjson-reuse                     1.79      8777318.94     22493912.69        2.56        1.20
+   5131466   parse/index                   yyjson                          0.69     11487246.88     21644667.44        1.88        0.83
+   5131466   parse/index                   simdjson-dom(warm)              1.80      8938375.50     18870799.69        2.11        2.46
+  -> cjson (best: cjson-reuse) is 0.99x GB/s, 1.02x cyc/op vs best competitor (simdjson-dom(warm)) -- 1.79 vs 1.80 GB/s
+
+   5131466   parse/tree                    rapidjson                       0.27     52792769.44    149442490.25        2.83        0.28
+   5131466   parse/tree                    glz::generic                    0.35     49349902.56    110278678.81        2.23        0.69
+   5131466   parse/tree                    boost.json                      0.32     52989959.00    133167019.94        2.51        0.61
+   5131466   parse/tree                    nlohmann                        0.08    220445036.81    427863818.25        1.94        0.49
+
+   5131466   serialize/index               cjson                           0.96      7709767.25     17241458.31        2.24        1.43
+   5131466   serialize/index               cjson-reuse                     2.11      7221122.50     17239042.19        2.39        1.36
+   5131466   serialize/index               yyjson                          0.68      7829773.25     13197783.38        1.69        2.93
+  -> cjson (best: cjson-reuse) is 3.12x GB/s, 1.08x cyc/op vs best competitor (yyjson) -- 2.11 vs 0.68 GB/s
+
+   5131466   serialize/tree                rapidjson                       0.35     47483322.63     98520568.00        2.07        0.39
+   5131466   serialize/tree                glz::generic                    0.96     14968845.88     23113371.69        1.54        2.21
+   5131466   serialize/tree                boost.json                      0.96     16585649.94     38587653.06        2.33        1.62
+   5131466   serialize/tree                nlohmann(alloc)                 0.14     96133741.69    173426600.88        1.80        1.83
+
+### large-file  (26141344 B)
+  26141344   parse/index                   cjson                           0.62     57957394.75    134274286.00        2.32        3.22
+  26141344   parse/index                   cjson-reuse                     1.45     52683164.25    134256344.50        2.55        2.97
+  26141344   parse/index                   yyjson                          0.55     79860239.25    122005581.50        1.53        2.36
+  26141344   parse/index                   simdjson-dom(warm)              1.37     54864228.25    112365571.00        2.05        3.54
+  -> cjson (best: cjson-reuse) is 1.06x GB/s, 1.04x cyc/op vs best competitor (simdjson-dom(warm)) -- 1.45 vs 1.37 GB/s
+
+  26141344   parse/tree                    rapidjson                       0.23    317186838.25    830174322.25        2.62        0.70
+  26141344   parse/tree                    glz::generic                    0.16    427075657.00    772624755.75        1.81        1.64
+  26141344   parse/tree                    boost.json                      0.14    475528424.25    989307776.75        2.08        1.06
+  26141344   parse/tree                    nlohmann                        0.06   1442485868.00   2645252114.25        1.83        1.04
+
+  26141344   serialize/index               cjson                           0.91     55074210.25     88934105.00        1.61        4.49
+  26141344   serialize/index               cjson-reuse                     1.81     50789694.25     88924732.75        1.75        4.21
+  26141344   serialize/index               yyjson                          0.52     69944796.75     83801566.75        1.20        5.66
+  -> cjson (best: cjson-reuse) is 3.49x GB/s, 1.38x cyc/op vs best competitor (yyjson) -- 1.81 vs 0.52 GB/s
+
+  26141344   serialize/tree                rapidjson                       0.35    272176767.50    555181392.75        2.04        0.92
+  26141344   serialize/tree                glz::generic                    0.84    100133004.50    160592028.75        1.60        4.02
+  26141344   serialize/tree                boost.json                      0.77    120434184.75    249149100.00        2.07        2.26
+  26141344   serialize/tree                nlohmann(alloc)                 0.15    507311329.75    949617263.50        1.87        1.26
+
+### github_events  (65132 B)
+     65132   parse/index                   cjson                           2.58        86701.23       282169.73        3.25        0.64
+     65132   parse/index                   cjson-reuse                     2.60        86420.13       281460.73        3.26        0.63
+     65132   parse/index                   yyjson                          1.81       126800.75       262479.53        2.07        0.97
+     65132   parse/index                   simdjson-dom(warm)              2.38        91129.77       236643.48        2.60        1.63
+  -> cjson (best: cjson-reuse) is 1.09x GB/s, 1.05x cyc/op vs best competitor (simdjson-dom(warm)) -- 2.60 vs 2.38 GB/s
+
+     65132   parse/tree                    rapidjson                       0.35       667427.77      1805665.72        2.71        0.62
+     65132   parse/tree                    glz::generic                    0.32       724816.72      1541346.23        2.13        1.74
+     65132   parse/tree                    boost.json                      0.31       733670.91      1840335.45        2.51        1.12
+     65132   parse/tree                    nlohmann                        0.09      2673497.55      5436840.63        2.03        1.19
+
+     65132   extract-lazy                  cjson-ondemand                  4.44        50193.28       140036.47        2.79        0.50
+     65132   extract-lazy                  simdjson-ondemand               5.91        37914.16       109696.47        2.89        0.77
+     65132   extract-lazy                  glaze-lazy                      0.60         1011.10         2431.00        2.40        0.00
+     65132   extract-lazy                  glaze-lazyjson                  0.79          771.95         1914.00        2.48        0.35
+  -> cjson (best: cjson-ondemand) is 0.75x GB/s, 0.76x cyc/op vs best competitor (simdjson-ondemand) -- 4.44 vs 5.91 GB/s
+
+     65132   extract-dom/index             cjson-dom                       2.63        86307.42       282031.45        3.27        0.63
+     65132   extract-dom/index             yyjson                          1.81       127120.77       262749.47        2.07        0.97
+  -> cjson (best: cjson-dom) is 1.45x GB/s, 1.47x cyc/op vs best competitor (yyjson) -- 2.63 vs 1.81 GB/s
+
+     65132   extract-dom/tree              rapidjson                       0.35       667690.84      1806522.69        2.71        0.62
+     65132   extract-dom/tree              boost.json                      0.29       786520.42      1832444.83        2.33        1.48
+     65132   extract-dom/tree              nlohmann                        0.08      2700664.20      5429987.78        2.01        1.23
+
+     65132   serialize/index               cjson                           2.36        81574.19       169421.46        2.08        2.26
+     65132   serialize/index               cjson-reuse                     2.38        81203.04       169104.44        2.08        2.26
+     65132   serialize/index               yyjson                          2.48        75576.97       167383.40        2.21        2.07
+  -> cjson (best: cjson-reuse) is 0.96x GB/s, 0.93x cyc/op vs best competitor (yyjson) -- 2.38 vs 2.48 GB/s
+
+     65132   serialize/tree                rapidjson                       0.38       509909.68      1123438.55        2.20        0.84
+     65132   serialize/tree                glz::generic                    1.45       127607.15       302302.41        2.37        2.14
+     65132   serialize/tree                boost.json                      1.05       178132.85       495174.44        2.78        1.79
+     65132   serialize/tree                nlohmann(alloc)                 0.28       685468.50      1932888.59        2.82        1.08
+
+### numbers  (150124 B)
+    150124   parse/index                   cjson                           0.45       879849.66      3276506.13        3.72        0.54
+    150124   parse/index                   cjson-reuse                     0.61       859798.97      3275666.72        3.81        0.52
+    150124   parse/index                   yyjson                          0.56       675894.59      1894922.88        2.80        0.62
+    150124   parse/index                   simdjson-dom(warm)              0.82       635643.47      2078806.19        3.27        0.76
+  -> cjson (best: cjson-reuse) is 0.74x GB/s, 0.74x cyc/op vs best competitor (simdjson-dom(warm)) -- 0.61 vs 0.82 GB/s
+
+    150124   parse/tree                    rapidjson                       0.26      2035842.25      7215968.63        3.54        0.15
+    150124   parse/tree                    glz::generic                    0.18      1269861.09      3655189.81        2.88        0.31
+    150124   parse/tree                    boost.json                      0.43       828070.97      2478050.56        2.99        0.43
+    150124   parse/tree                    nlohmann                        0.05      9823324.47     23366479.47        2.38        0.57
+
+    150124   extract-lazy                  cjson-ondemand                  2.55       204996.88       595117.00        2.90        0.57
+    150124   extract-lazy                  simdjson-ondemand               3.25       159730.06       453208.97        2.84        0.88
+    150124   extract-lazy                  glaze-lazy                      0.79       336870.29      1011808.65        3.00        0.24
+    150124   extract-lazy                  glaze-lazyjson                  1.72       156590.58       521049.58        3.33        0.78
+  -> cjson (best: cjson-ondemand) is 0.79x GB/s, 0.78x cyc/op vs best competitor (simdjson-ondemand) -- 2.55 vs 3.25 GB/s
+
+    150124   extract-dom/index             cjson-dom                       0.61       852967.94      3275903.16        3.84        0.52
+    150124   extract-dom/index             yyjson                          0.53       678610.84      1895117.50        2.79        0.62
+  -> cjson (best: cjson-dom) is 1.16x GB/s, 0.80x cyc/op vs best competitor (yyjson) -- 0.61 vs 0.53 GB/s
+
+    150124   extract-dom/tree              rapidjson                       0.26      2043428.53      7217027.97        3.53        0.15
+    150124   extract-dom/tree              boost.json                      0.42       818243.75      2478235.50        3.03        0.43
+    150124   extract-dom/tree              nlohmann                        0.05      9743450.72     23367246.38        2.40        0.57
+
+    150124   serialize/index               cjson                           0.33      1388891.09      3599469.91        2.59        1.73
+    150124   serialize/index               cjson-reuse                     0.40      1364442.75      3598911.53        2.64        1.71
+    150124   serialize/index               yyjson                          0.51      1051344.13      2397328.28        2.28        3.56
+  -> cjson (best: cjson-reuse) is 0.78x GB/s, 0.77x cyc/op vs best competitor (yyjson) -- 0.40 vs 0.51 GB/s
+
+    150124   serialize/tree                rapidjson                       0.27      2024546.56      5052051.63        2.50        1.60
+    150124   serialize/tree                glz::generic                    0.66       817535.94      1885586.22        2.31        0.02
+    150124   serialize/tree                boost.json                      0.32      1703604.88      4969289.50        2.92        0.76
+    150124   serialize/tree                nlohmann(alloc)                 0.22      2485178.69      6563716.75        2.64        0.62
+
+### instruments  (220346 B)
+    220346   parse/index                   cjson                           0.92       476884.47      1583627.50        3.32        0.63
+    220346   parse/index                   cjson-reuse                     1.62       464394.75      1582711.56        3.41        0.56
+    220346   parse/index                   yyjson                          0.89       511463.47      1132041.56        2.22        0.33
+    220346   parse/index                   simdjson-dom(warm)              1.85       409627.00      1201904.06        2.93        0.78
+  -> cjson (best: cjson-reuse) is 0.87x GB/s, 0.88x cyc/op vs best competitor (simdjson-dom(warm)) -- 1.62 vs 1.85 GB/s
+
+    220346   parse/tree                    rapidjson                       0.35      2090826.69      5455180.88        2.61        0.72
+    220346   parse/tree                    glz::generic                    0.26      2980940.56      6638680.97        2.23        1.05
+    220346   parse/tree                    boost.json                      0.26      2922264.00      7633215.88        2.61        0.78
+    220346   parse/tree                    nlohmann                        0.08      9666719.63     20484958.59        2.12        1.02
+
+    220346   extract-lazy                  cjson-ondemand                  2.05       379729.28      1004968.06        2.65        1.61
+    220346   extract-lazy                  simdjson-ondemand               3.19       234736.00       683222.00        2.91        1.15
+    220346   extract-lazy                  glaze-lazy                      1.61       335969.00       925638.03        2.76        0.95
+    220346   extract-lazy                  glaze-lazyjson                  0.70       788866.34      1644545.25        2.08        1.13
+  -> cjson (best: cjson-ondemand) is 0.64x GB/s, 0.62x cyc/op vs best competitor (simdjson-ondemand) -- 2.05 vs 3.19 GB/s
+
+    220346   extract-dom/index             cjson-dom                       1.64       452853.78      1582995.00        3.50        0.57
+    220346   extract-dom/index             yyjson                          0.54       544614.69      1132468.47        2.08        0.36
+  -> cjson (best: cjson-dom) is 3.04x GB/s, 1.20x cyc/op vs best competitor (yyjson) -- 1.64 vs 0.54 GB/s
+
+    220346   extract-dom/tree              rapidjson                       0.35      2085197.69      5456460.13        2.62        0.72
+    220346   extract-dom/tree              boost.json                      0.25      3064157.41      7604606.31        2.48        1.01
+    220346   extract-dom/tree              nlohmann                        0.08      9914689.91     20469819.28        2.07        1.04
+
+    220346   serialize/index               cjson                           0.76       317089.97       870628.68        2.75        0.55
+    220346   serialize/index               cjson-reuse                     1.27       303048.84       870064.95        2.87        0.54
+    220346   serialize/index               yyjson                          1.69       223893.32       683784.84        3.05        0.33
+  -> cjson (best: cjson-reuse) is 0.75x GB/s, 0.74x cyc/op vs best competitor (yyjson) -- 1.27 vs 1.69 GB/s
+
+    220346   serialize/tree                rapidjson                       0.36      1076408.95      2847516.16        2.65        0.39
+    220346   serialize/tree                glz::generic                    0.62       599214.87      1440328.03        2.40        1.05
+    220346   serialize/tree                boost.json                      0.55       687135.58      1959919.00        2.85        1.07
+    220346   serialize/tree                nlohmann(alloc)                 0.24      1582127.76      4073812.39        2.57        1.48
+
+### countries.geo  (256950 B)
+    256950   parse/index                   cjson                           0.24      2296562.09      8718901.03        3.80        0.45
+    256950   parse/index                   cjson-reuse                     0.40      2234764.06      8717674.25        3.90        0.42
+    256950   parse/index                   yyjson                          0.36      1362074.38      3926541.63        2.88        0.65
+    256950   parse/index                   simdjson-dom(warm)              0.48      1883514.69      5507930.53        2.92        0.68
+  -> cjson (best: cjson-reuse) is 0.83x GB/s, 0.84x cyc/op vs best competitor (simdjson-dom(warm)) -- 0.40 vs 0.48 GB/s
+
+    256950   parse/tree                    rapidjson                       0.17      4848802.25     13333087.97        2.75        0.38
+    256950   parse/tree                    glz::generic                    0.12      7668348.44     19468252.53        2.54        0.49
+    256950   parse/tree                    boost.json                      0.15      6036474.16     15290277.84        2.53        0.33
+    256950   parse/tree                    nlohmann                        0.03     28866473.56     63181067.28        2.19        0.52
+
+    256950   extract-lazy                  cjson-ondemand                  2.56       356660.59       778601.00        2.18        3.65
+    256950   extract-lazy                  simdjson-ondemand               2.98       306681.34       672521.00        2.19        2.82
+    256950   extract-lazy                  glaze-lazy                      0.30         1262.16         2729.00        2.16        0.00
+    256950   extract-lazy                  glaze-lazyjson                  0.40          926.45         2161.00        2.33        0.60
+  -> cjson (best: cjson-ondemand) is 0.86x GB/s, 0.86x cyc/op vs best competitor (simdjson-ondemand) -- 2.56 vs 2.98 GB/s
+
+    256950   extract-dom/index             cjson-dom                       0.40      2233977.91      8718515.66        3.90        0.42
+    256950   extract-dom/index             yyjson                          0.32      1393049.13      3927301.22        2.82        0.66
+  -> cjson (best: cjson-dom) is 1.24x GB/s, 0.62x cyc/op vs best competitor (yyjson) -- 0.40 vs 0.32 GB/s
+
+    256950   extract-dom/tree              rapidjson                       0.17      4897949.84     13335061.69        2.72        0.39
+    256950   extract-dom/tree              boost.json                      0.15      6212886.56     15285759.31        2.46        0.36
+    256950   extract-dom/tree              nlohmann                        0.03     29074479.56     63190330.00        2.17        0.51
+
+    256950   serialize/index               cjson                           0.24      3251120.97      9373379.97        2.88        0.61
+    256950   serialize/index               cjson-reuse                     0.29      3235652.56      9372574.16        2.90        0.59
+    256950   serialize/index               yyjson                          0.33      2287498.69      5626339.47        2.46        2.11
+  -> cjson (best: cjson-reuse) is 0.86x GB/s, 0.71x cyc/op vs best competitor (yyjson) -- 0.29 vs 0.33 GB/s
+
+    256950   serialize/tree                rapidjson                       0.19      4901037.09     11676461.63        2.38        1.29
+    256950   serialize/tree                glz::generic                    0.41      2216088.09      5094377.53        2.30        0.16
+    256950   serialize/tree                boost.json                      0.20      4618812.53     13162411.53        2.85        0.62
+    256950   serialize/tree                nlohmann(alloc)                 0.13      6416869.44     14317590.72        2.23        0.70
+
+### update-center  (533178 B)
+    533178   parse/index                   cjson                           0.56      1155854.81      2918476.81        2.52        2.40
+    533178   parse/index                   cjson-reuse                     1.80      1041721.97      2916965.81        2.80        2.09
+    533178   parse/index                   yyjson                          0.51      1539310.84      2599570.81        1.69        2.09
+    533178   parse/index                   simdjson-dom(warm)              1.79      1016556.16      2469888.25        2.43        2.75
+  -> cjson (best: cjson-reuse) is 1.01x GB/s, 0.98x cyc/op vs best competitor (simdjson-dom(warm)) -- 1.80 vs 1.79 GB/s
+
+    533178   parse/tree                    rapidjson                       0.24      6567520.00     17377503.34        2.65        0.74
+    533178   parse/tree                    glz::generic                    0.18     10192381.50     19944689.03        1.96        1.49
+    533178   parse/tree                    boost.json                      0.18     10486213.69     22849686.47        2.18        0.95
+    533178   parse/tree                    nlohmann                        0.06     32633129.31     59315673.09        1.82        1.02
+
+    533178   extract-lazy                  cjson-ondemand                  3.20       579142.63      1305498.13        2.25        6.35
+    533178   extract-lazy                  simdjson-ondemand               4.44       413071.50       996723.06        2.41        6.13
+    533178   extract-lazy                  glaze-lazy                      0.72         1056.74         2455.00        2.32        0.00
+    533178   extract-lazy                  glaze-lazyjson                  0.87          885.03         1953.00        2.21        0.71
+  -> cjson (best: cjson-ondemand) is 0.72x GB/s, 0.71x cyc/op vs best competitor (simdjson-ondemand) -- 3.20 vs 4.44 GB/s
+
+    533178   extract-dom/index             cjson-dom                       1.76      1037982.59      2917514.19        2.81        2.10
+    533178   extract-dom/index             yyjson                          0.51      1537215.72      2599963.47        1.69        2.07
+  -> cjson (best: cjson-dom) is 3.49x GB/s, 1.48x cyc/op vs best competitor (yyjson) -- 1.76 vs 0.51 GB/s
+
+    533178   extract-dom/tree              rapidjson                       0.24      6587989.25     17379455.44        2.64        0.74
+    533178   extract-dom/tree              boost.json                      0.18     10634862.19     22899162.47        2.15        0.95
+    533178   extract-dom/tree              nlohmann                        0.06     32782670.66     59365610.69        1.81        1.01
+
+    533178   serialize/index               cjson                           0.96      1091579.91      2150019.38        1.97        3.45
+    533178   serialize/index               cjson-reuse                     1.88      1019733.69      2149327.38        2.11        3.31
+    533178   serialize/index               yyjson                          0.98      1042966.31      1875463.16        1.80        4.91
+  -> cjson (best: cjson-reuse) is 1.92x GB/s, 1.02x cyc/op vs best competitor (yyjson) -- 1.88 vs 0.98 GB/s
+
+    533178   serialize/tree                rapidjson                       0.36      5370875.41     11711196.78        2.18        0.93
+    533178   serialize/tree                glz::generic                    0.86      2161449.69      4000717.53        1.85        3.03
+    533178   serialize/tree                boost.json                      0.89      2120240.66      5619194.66        2.65        2.10
+    533178   serialize/tree                nlohmann(alloc)                 0.17      8839892.00     20068552.72        2.27        1.58
+
+### twitterescaped  (562408 B)
+    562408   parse/index                   cjson                           0.46      1756413.88      5136043.00        2.92        1.20
+    562408   parse/index                   cjson-reuse                     1.20      1618039.22      5134512.97        3.17        1.01
+    562408   parse/index                   yyjson                          0.49      1615560.44      3981607.69        2.46        0.77
+    562408   parse/index                   simdjson-dom(warm)              1.03      1859181.44      4107346.53        2.21        1.10
+  -> cjson (best: cjson-reuse) is 1.16x GB/s, 1.15x cyc/op vs best competitor (simdjson-dom(warm)) -- 1.20 vs 1.03 GB/s
+
+    562408   parse/tree                    rapidjson                       0.25      6652434.25     17153321.41        2.58        1.21
+    562408   parse/tree                    glz::generic                    0.24      8412017.03     17452751.31        2.07        1.56
+    562408   parse/tree                    boost.json                      0.20      9683873.59     20349591.19        2.10        1.70
+    562408   parse/tree                    nlohmann                        0.07     29474050.22     53409048.41        1.81        1.31
+
+    562408   extract-lazy                  cjson-ondemand                  3.11       633463.34      1484932.09        2.34        3.88
+    562408   extract-lazy                  simdjson-ondemand               4.85       400543.41      1033677.06        2.58        3.57
+    562408   extract-lazy                  glaze-lazy                      1.61         2770.96         6048.01        2.18        0.36
+    562408   extract-lazy                  glaze-lazyjson                  2.18         2072.15         4663.01        2.25        0.59
+  -> cjson (best: cjson-ondemand) is 0.64x GB/s, 0.63x cyc/op vs best competitor (simdjson-ondemand) -- 3.11 vs 4.85 GB/s
+
+    562408   extract-dom/index             cjson-dom                       1.20      1621208.69      5135598.41        3.17        1.01
+    562408   extract-dom/index             yyjson                          0.49      1573016.19      3982338.59        2.53        0.77
+  -> cjson (best: cjson-dom) is 2.44x GB/s, 0.97x cyc/op vs best competitor (yyjson) -- 1.20 vs 0.49 GB/s
+
+    562408   extract-dom/tree              rapidjson                       0.25      6670984.50     17155956.84        2.57        1.20
+    562408   extract-dom/tree              boost.json                      0.19      9879253.59     20117986.22        2.04        1.71
+    562408   extract-dom/tree              nlohmann                        0.07     29611774.94     53366742.38        1.80        1.33
+
+    562408   serialize/index               cjson                           0.91       877945.28      1987003.28        2.26        1.05
+    562408   serialize/index               cjson-reuse                     2.07       797512.66      1986156.25        2.49        0.87
+    562408   serialize/index               yyjson                          0.93       997081.59      2353706.13        2.36        1.29
+  -> cjson (best: cjson-reuse) is 2.23x GB/s, 1.25x cyc/op vs best competitor (yyjson) -- 2.07 vs 0.93 GB/s
+
+    562408   serialize/tree                rapidjson                       0.37      4504151.84     10045690.41        2.23        0.83
+    562408   serialize/tree                glz::generic                    1.15      1402525.09      3087490.31        2.20        1.73
+    562408   serialize/tree                boost.json                      0.91      1789703.22      4946679.53        2.76        1.42
+    562408   serialize/tree                nlohmann(alloc)                 0.19      8007922.13     15945983.44        1.99        1.43
+
+### mesh  (723597 B)
+    723597   parse/index                   cjson                           0.27      5208272.84     18627833.94        3.58        0.46
+    723597   parse/index                   cjson-reuse                     0.51      4923900.25     18625912.00        3.78        0.43
+    723597   parse/index                   yyjson                          0.33      3739504.06     11103638.53        2.97        0.43
+    723597   parse/index                   simdjson-dom(warm)              0.66      3799290.78     12026134.06        3.17        0.56
+  -> cjson (best: cjson-reuse) is 0.76x GB/s, 0.77x cyc/op vs best competitor (simdjson-dom(warm)) -- 0.51 vs 0.66 GB/s
+
+    723597   parse/tree                    rapidjson                       0.16     10548020.81     34568263.84        3.28        0.34
+    723597   parse/tree                    glz::generic                    0.12     10771189.69     26911770.53        2.50        0.35
+    723597   parse/tree                    boost.json                      0.17      7974694.97     19796650.81        2.48        0.49
+    723597   parse/tree                    nlohmann                        0.04     50395751.84    119240785.31        2.37        0.49
+
+    723597   extract-lazy                  cjson-ondemand                  3.31       777410.31      1955893.22        2.52        1.00
+    723597   extract-lazy                  simdjson-ondemand               3.58       702042.97      1683613.13        2.40        0.85
+    723597   extract-lazy                  glaze-lazy                      0.73         8692.50        24042.02        2.77        0.74
+    723597   extract-lazy                  glaze-lazyjson                  1.55         4132.01        13043.01        3.16        0.39
+  -> cjson (best: cjson-ondemand) is 0.93x GB/s, 0.90x cyc/op vs best competitor (simdjson-ondemand) -- 3.31 vs 3.58 GB/s
+
+    723597   extract-dom/index             cjson-dom                       0.51      4941121.53     18626401.44        3.77        0.43
+    723597   extract-dom/index             yyjson                          0.33      3728822.06     11103902.22        2.98        0.43
+  -> cjson (best: cjson-dom) is 1.52x GB/s, 0.75x cyc/op vs best competitor (yyjson) -- 0.51 vs 0.33 GB/s
+
+    723597   extract-dom/tree              rapidjson                       0.16     10809464.16     34570238.31        3.20        0.34
+    723597   extract-dom/tree              boost.json                      0.18      8203694.28     19746051.94        2.41        0.55
+    723597   extract-dom/tree              nlohmann                        0.04     50943443.56    119175900.00        2.34        0.49
+
+    723597   serialize/index               cjson                           0.36      5023016.88     14315707.53        2.85        0.91
+    723597   serialize/index               cjson-reuse                     0.46      4948255.97     14314385.75        2.89        0.88
+    723597   serialize/index               yyjson                          0.45      3955664.38      9673105.44        2.45        1.43
+  -> cjson (best: cjson-reuse) is 1.04x GB/s, 0.80x cyc/op vs best competitor (yyjson) -- 0.46 vs 0.45 GB/s
+
+    723597   serialize/tree                rapidjson                       0.30      7927997.91     21291555.59        2.69        1.20
+    723597   serialize/tree                glz::generic                    0.37      6262467.25     13554907.94        2.16        0.09
+    723597   serialize/tree                boost.json                      0.28      8279401.38     24969102.75        3.02        0.48
+    723597   serialize/tree                nlohmann(alloc)                 0.17     11132553.16     26959676.97        2.42        0.67
+
+### citm_catalog  (1727204 B)
+   1727204   parse/index                   cjson                           0.72      2995536.66      9174775.13        3.06        0.55
+   1727204   parse/index                   cjson-reuse                     2.13      2737087.25      9172343.22        3.35        0.43
+   1727204   parse/index                   yyjson                          0.57      4110789.78      7356447.03        1.79        0.28
+   1727204   parse/index                   simdjson-dom(warm)              2.40      2442959.09      7328564.63        3.00        0.66
+  -> cjson (best: cjson-reuse) is 0.89x GB/s, 0.89x cyc/op vs best competitor (simdjson-dom(warm)) -- 2.13 vs 2.40 GB/s
+
+   1727204   parse/tree                    rapidjson                       0.46     11084418.41     32182082.84        2.90        0.27
+   1727204   parse/tree                    glz::generic                    0.37     15927892.50     32320654.75        2.03        0.94
+   1727204   parse/tree                    boost.json                      0.37     16320065.63     38245295.47        2.34        0.38
+   1727204   parse/tree                    nlohmann                        0.10     59273226.81    121573893.69        2.05        0.80
+
+   1727204   extract-lazy                  cjson-ondemand                  4.46      1314589.81      3658971.31        2.78        2.03
+   1727204   extract-lazy                  simdjson-ondemand               5.39      1088187.19      2978794.28        2.74        2.86
+   1727204   extract-lazy                  glaze-lazy                      0.28         1361.14         2910.00        2.14        0.14
+   1727204   extract-lazy                  glaze-lazyjson                  0.50          770.26         2067.00        2.68        0.00
+  -> cjson (best: cjson-ondemand) is 0.83x GB/s, 0.83x cyc/op vs best competitor (simdjson-ondemand) -- 4.46 vs 5.39 GB/s
+
+   1727204   extract-dom/index             cjson-dom                       2.12      2661377.47      9172930.66        3.45        0.43
+   1727204   extract-dom/index             yyjson                          0.61      4084765.81      7356809.88        1.80        0.28
+  -> cjson (best: cjson-dom) is 3.46x GB/s, 1.53x cyc/op vs best competitor (yyjson) -- 2.12 vs 0.61 GB/s
+
+   1727204   extract-dom/tree              rapidjson                       0.46     10997056.94     32183506.28        2.93        0.27
+   1727204   extract-dom/tree              boost.json                      0.36     17059797.47     38386644.28        2.25        0.40
+   1727204   extract-dom/tree              nlohmann                        0.10     59848322.88    121655785.31        2.03        0.82
+
+   1727204   serialize/index               cjson                           0.72      1392939.19      4678151.38        3.36        0.27
+   1727204   serialize/index               cjson-reuse                     1.32      1309459.09      4677097.38        3.57        0.24
+   1727204   serialize/index               yyjson                          0.78      1136583.16      3622909.59        3.19        0.33
+  -> cjson (best: cjson-reuse) is 1.68x GB/s, 0.87x cyc/op vs best competitor (yyjson) -- 1.32 vs 0.78 GB/s
+
+   1727204   serialize/tree                rapidjson                       0.42      4116206.22     12003550.44        2.92        0.24
+   1727204   serialize/tree                glz::generic                    0.38      4776650.72      7146368.22        1.50        0.35
+   1727204   serialize/tree                boost.json                      0.40      4422951.81     11165078.47        2.52        1.27
+   1727204   serialize/tree                nlohmann(alloc)                 0.16      9556814.00     17290860.16        1.81        1.47
+
+### mesh.pretty  (1577353 B)
+   1577353   parse/index                   cjson                           0.47      6188874.63     20515534.69        3.31        0.67
+   1577353   parse/index                   cjson-reuse                     0.92      5821266.88     20512929.19        3.52        0.62
+   1577353   parse/index                   yyjson                          0.48      6076550.06     15998679.94        2.63        0.41
+   1577353   parse/index                   simdjson-dom(warm)              1.18      4676027.13     14846879.34        3.18        0.76
+  -> cjson (best: cjson-reuse) is 0.78x GB/s, 0.80x cyc/op vs best competitor (simdjson-dom(warm)) -- 0.92 vs 1.18 GB/s
+
+   1577353   parse/tree                    rapidjson                       0.24     17841665.66     53168144.34        2.98        0.56
+   1577353   parse/tree                    glz::generic                    0.22     13769535.28     33809153.06        2.46        0.47
+   1577353   parse/tree                    boost.json                      0.34      8793124.66     21037315.28        2.39        0.63
+   1577353   parse/tree                    nlohmann                        0.08     61356678.63    152364454.69        2.48        0.52
+
+   1577353   extract-lazy                  cjson-ondemand                  3.28      1663568.22      5420381.47        3.26        0.38
+   1577353   extract-lazy                  simdjson-ondemand               3.72      1461611.84      4605892.38        3.15        0.46
+   1577353   extract-lazy                  glaze-lazy                      3.66      1031575.22      3881257.28        3.76        0.04
+   1577353   extract-lazy                  glaze-lazyjson                  0.83      4759441.53     12436769.56        2.61        0.12
+  -> cjson (best: cjson-ondemand) is 0.88x GB/s, 0.88x cyc/op vs best competitor (simdjson-ondemand) -- 3.28 vs 3.72 GB/s
+
+   1577353   extract-dom/index             cjson-dom                       0.93      5789750.38     20513494.56        3.54        0.62
+   1577353   extract-dom/index             yyjson                          0.47      5873615.63     15998923.78        2.72        0.41
+  -> cjson (best: cjson-dom) is 1.95x GB/s, 1.01x cyc/op vs best competitor (yyjson) -- 0.93 vs 0.47 GB/s
+
+   1577353   extract-dom/tree              rapidjson                       0.24     17540369.69     53169530.50        3.03        0.56
+   1577353   extract-dom/tree              boost.json                      0.34      9978814.03     20879078.31        2.09        0.69
+   1577353   extract-dom/tree              nlohmann                        0.08     61954447.00    152329922.13        2.46        0.53
+
+   1577353   serialize/index               cjson                           0.37      5026185.84     14315662.81        2.85        0.91
+   1577353   serialize/index               cjson-reuse                     0.47      4944840.91     14314385.75        2.89        0.88
+   1577353   serialize/index               yyjson                          0.45      3911609.00      9673130.50        2.47        1.43
+  -> cjson (best: cjson-reuse) is 1.05x GB/s, 0.79x cyc/op vs best competitor (yyjson) -- 0.47 vs 0.45 GB/s
+
+   1577353   serialize/tree                rapidjson                       0.29      8055093.50     21291546.69        2.64        1.20
+   1577353   serialize/tree                glz::generic                    0.36      6567964.72     13554747.00        2.06        0.09
+   1577353   serialize/tree                boost.json                      0.28      8277271.09     24971852.78        3.02        0.48
+   1577353   serialize/tree                nlohmann(alloc)                 0.17     11452239.88     26959337.41        2.35        0.67
+
+### canada  (2251051 B)
+   2251051   parse/index                   cjson                           0.32     14297651.72     55861338.38        3.91        0.21
+   2251051   parse/index                   cjson-reuse                     0.55     13994662.84     55857563.97        3.99        0.18
+   2251051   parse/index                   yyjson                          0.39     10742159.91     30948773.41        2.88        0.30
+   2251051   parse/index                   simdjson-dom(warm)              0.73     10558807.28     35165189.16        3.33        0.40
+  -> cjson (best: cjson-reuse) is 0.75x GB/s, 0.75x cyc/op vs best competitor (simdjson-dom(warm)) -- 0.55 vs 0.73 GB/s
+
+   2251051   parse/tree                    rapidjson                       0.14     48255799.72    138678825.56        2.87        0.61
+   2251051   parse/tree                    glz::generic                    0.16     43584848.84    109724382.78        2.52        0.16
+   2251051   parse/tree                    boost.json                      0.24     29346299.28     74797804.41        2.55        0.12
+   2251051   parse/tree                    nlohmann                        0.05    170117237.03    408534511.78        2.40        0.45
+
+   2251051   extract-lazy                  cjson-ondemand                  3.89      2019385.03      5219545.50        2.58        2.40
+   2251051   extract-lazy                  simdjson-ondemand               4.29      1800851.84      4515880.44        2.51        2.70
+   2251051   extract-lazy                  glaze-lazy                      0.32         1184.77         2580.00        2.18        0.00
+   2251051   extract-lazy                  glaze-lazyjson                  0.45          821.71         1989.00        2.42        0.00
+  -> cjson (best: cjson-ondemand) is 0.91x GB/s, 0.89x cyc/op vs best competitor (simdjson-ondemand) -- 3.89 vs 4.29 GB/s
+
+   2251051   extract-dom/index             cjson-dom                       0.55     14059019.34     55858388.28        3.97        0.18
+   2251051   extract-dom/index             yyjson                          0.38     10795975.16     30948975.47        2.87        0.30
+  -> cjson (best: cjson-dom) is 1.45x GB/s, 0.77x cyc/op vs best competitor (yyjson) -- 0.55 vs 0.38 GB/s
+
+   2251051   extract-dom/tree              rapidjson                       0.14     48325359.97    138682717.06        2.87        0.61
+   2251051   extract-dom/tree              boost.json                      0.23     30459600.06     75238253.13        2.47        0.14
+   2251051   extract-dom/tree              nlohmann                        0.05    169363797.25    408881181.50        2.41        0.44
+
+   2251051   serialize/index               cjson                           0.37     16214522.28     45509864.94        2.81        1.35
+   2251051   serialize/index               cjson-reuse                     0.46     16137610.03     45507905.72        2.82        1.32
+   2251051   serialize/index               yyjson                          0.46     12193683.66     31246271.31        2.56        0.80
+  -> cjson (best: cjson-reuse) is 1.00x GB/s, 0.76x cyc/op vs best competitor (yyjson) -- 0.46 vs 0.46 GB/s
+
+   2251051   serialize/tree                rapidjson                       0.25     29714905.66     72732258.06        2.45        1.48
+   2251051   serialize/tree                glz::generic                    0.56     13103133.16     24908862.66        1.90        1.10
+   2251051   serialize/tree                boost.json                      0.37     19808325.53     54362950.91        2.74        0.67
+   2251051   serialize/tree                nlohmann(alloc)                 0.15     38601351.81     85733536.34        2.22        0.77
+
+### marine_ik  (2983466 B)
+   2983466   parse/index                   cjson                           0.28     20999450.00     67006544.22        3.19        0.79
+   2983466   parse/index                   cjson-reuse                     0.48     21027376.75     67001459.13        3.19        0.74
+   2983466   parse/index                   yyjson                          0.19     20071937.81     33938291.03        1.69        0.79
+   2983466   parse/index                   simdjson-dom(warm)              0.66     15394106.28     44259367.63        2.88        0.76
+  -> cjson (best: cjson-reuse) is 0.72x GB/s, 0.73x cyc/op vs best competitor (simdjson-dom(warm)) -- 0.48 vs 0.66 GB/s
+
+   2983466   parse/tree                    rapidjson                       0.18     40615067.94    114474543.03        2.82        0.48
+   2983466   parse/tree                    glz::generic                    0.11     60067339.63    135168179.50        2.25        0.66
+   2983466   parse/tree                    boost.json                      0.16     45503590.66    110222818.88        2.42        0.66
+   2983466   parse/tree                    nlohmann                        0.05    212103269.47    466263655.19        2.20        0.53
+
+   2983466   extract-lazy                  cjson-ondemand                  1.37      7476539.88     21235975.13        2.84        0.90
+   2983466   extract-lazy                  simdjson-ondemand               1.80      5581522.28     16809535.59        3.01        0.32
+   2983466   extract-lazy                  glaze-lazy                      2.05      4847183.59     15393062.59        3.18        0.32
+   2983466   extract-lazy                  glaze-lazyjson                  0.73     14630954.38     33128121.03        2.26        0.93
+  -> cjson (best: cjson-ondemand) is 0.67x GB/s, 0.65x cyc/op vs best competitor (glaze-lazy) -- 1.37 vs 2.05 GB/s
+
+   2983466   extract-dom/index             cjson-dom                       0.50     20078120.63     67002108.25        3.34        0.74
+   2983466   extract-dom/index             yyjson                          0.18     20101263.72     33938987.09        1.69        0.80
+  -> cjson (best: cjson-dom) is 2.75x GB/s, 1.00x cyc/op vs best competitor (yyjson) -- 0.50 vs 0.18 GB/s
+
+   2983466   extract-dom/tree              rapidjson                       0.18     40290028.19    114476588.00        2.84        0.48
+   2983466   extract-dom/tree              boost.json                      0.17     44586449.13    110098215.81        2.47        0.65
+   2983466   extract-dom/tree              nlohmann                        0.05    214247298.72    466407177.31        2.18        0.53
+
+   2983466   serialize/index               cjson                           0.25     22236042.38     58805687.75        2.64        1.13
+   2983466   serialize/index               cjson-reuse                     0.30     21762127.25     58803593.50        2.70        1.11
+   2983466   serialize/index               yyjson                          0.36     14607441.59     36058656.41        2.47        1.72
+  -> cjson (best: cjson-reuse) is 0.85x GB/s, 0.67x cyc/op vs best competitor (yyjson) -- 0.30 vs 0.36 GB/s
+
+   2983466   serialize/tree                rapidjson                       0.23     28703394.47     74221893.75        2.59        0.88
+   2983466   serialize/tree                glz::generic                    0.28     23055416.28     50342979.34        2.18        0.57
+   2983466   serialize/tree                boost.json                      0.18     36946468.13     98161521.38        2.66        0.89
+   2983466   serialize/tree                nlohmann(alloc)                 0.13     44887547.72     93491565.22        2.08        0.83
+
+### gsoc-2018  (3327831 B)
+   3327831   parse/index                   cjson                           0.90      5067550.50      9650070.97        1.90        5.65
+   3327831   parse/index                   cjson-reuse                     2.44      4646173.69      9647394.78        2.08        5.30
+   3327831   parse/index                   yyjson                          0.80      6906106.00     12083042.19        1.75        0.89
+   3327831   parse/index                   simdjson-dom(warm)              2.68      4089411.22      7880814.16        1.93        4.39
+  -> cjson (best: cjson-reuse) is 0.91x GB/s, 0.88x cyc/op vs best competitor (simdjson-dom(warm)) -- 2.44 vs 2.68 GB/s
+
+   3327831   parse/tree                    rapidjson                       0.29     32608680.84     91628501.03        2.81        0.26
+   3327831   parse/tree                    glz::generic                    0.66     17865958.06     36017216.97        2.02        1.04
+   3327831   parse/tree                    boost.json                      0.57     20175815.97     37014463.00        1.83        1.08
+   3327831   parse/tree                    nlohmann                        0.12     96996490.34    204552675.25        2.11        0.42
+
+   3327831   extract-lazy                  cjson-ondemand                  4.68      2403879.41      5893601.63        2.45        7.21
+   3327831   extract-lazy                  simdjson-ondemand               5.88      1908559.53      4651156.47        2.44        7.33
+   3327831   extract-lazy                  glaze-lazy                      0.36         1474.84         3391.00        2.30        0.35
+   3327831   extract-lazy                  glaze-lazyjson                  0.44         1165.31         2477.00        2.13        0.45
+  -> cjson (best: cjson-ondemand) is 0.80x GB/s, 0.79x cyc/op vs best competitor (simdjson-ondemand) -- 4.68 vs 5.88 GB/s
+
+   3327831   extract-dom/index             cjson-dom                       2.22      4411767.97      9647748.38        2.19        5.30
+   3327831   extract-dom/index             yyjson                          0.75      6901719.38     12083221.38        1.75        0.89
+  -> cjson (best: cjson-dom) is 2.98x GB/s, 1.56x cyc/op vs best competitor (yyjson) -- 2.22 vs 0.75 GB/s
+
+   3327831   extract-dom/tree              rapidjson                       0.29     32926485.75     91628391.13        2.78        0.26
+   3327831   extract-dom/tree              boost.json                      0.54     20888967.34     36910071.06        1.77        1.10
+   3327831   extract-dom/tree              nlohmann                        0.12     97732977.47    204550537.84        2.09        0.43
+
+   3327831   serialize/index               cjson                           1.11      3109200.34      4620535.91        1.49        4.21
+   3327831   serialize/index               cjson-reuse                     3.48      2632629.88      4618123.88        1.75        3.74
+   3327831   serialize/index               yyjson                          0.40      7887343.34     10767074.44        1.37        1.46
+  -> cjson (best: cjson-reuse) is 8.65x GB/s, 3.00x cyc/op vs best competitor (yyjson) -- 3.48 vs 0.40 GB/s
+
+   3327831   serialize/tree                rapidjson                       0.33     32958873.53     60133180.22        1.82        0.24
+   3327831   serialize/tree                glz::generic                    1.54      6160354.53      6565297.91        1.07        2.96
+   3327831   serialize/tree                boost.json                      1.22      8708011.53     26368689.78        3.03        0.57
+   3327831   serialize/tree                nlohmann(alloc)                 0.17     50642923.03    109619998.03        2.16        2.07
+
+### semanticscholar  (8593351 B)
+   8593351   parse/index                   cjson                           0.64     18373497.81     38875731.44        2.12        2.68
+   8593351   parse/index                   cjson-reuse                     1.53     16672776.06     38868479.50        2.33        2.41
+   8593351   parse/index                   yyjson                          0.60     22989005.00     40062065.44        1.74        1.34
+   8593351   parse/index                   simdjson-dom(warm)              1.67     15239889.94     33900434.94        2.22        3.04
+  -> cjson (best: cjson-reuse) is 0.91x GB/s, 0.91x cyc/op vs best competitor (simdjson-dom(warm)) -- 1.53 vs 1.67 GB/s
+
+   8593351   parse/tree                    rapidjson                       0.24     99126249.44    267847731.31        2.70        0.45
+   8593351   parse/tree                    glz::generic                    0.20    120601172.19    227643574.06        1.89        1.43
+   8593351   parse/tree                    boost.json                      0.24    121450163.63    266738702.81        2.20        1.09
+   8593351   parse/tree                    nlohmann                        0.07    422708528.75    809872510.88        1.92        0.75
+
+   8593351   extract-lazy                  cjson-ondemand                  3.23      9029848.81     19176762.56        2.12        8.71
+   8593351   extract-lazy                  simdjson-ondemand               4.13      6833380.56     14976852.94        2.19        9.76
+   8593351   extract-lazy                  glaze-lazy                      0.21          608.35         1358.00        2.23        0.00
+   8593351   extract-lazy                  glaze-lazyjson                  0.27          451.28         1119.00        2.48        0.00
+  -> cjson (best: cjson-ondemand) is 0.78x GB/s, 0.76x cyc/op vs best competitor (simdjson-ondemand) -- 3.23 vs 4.13 GB/s
+
+   8593351   extract-dom/index             cjson-dom                       1.50     16964220.69     38868832.50        2.29        2.41
+   8593351   extract-dom/index             yyjson                          0.57     22820415.50     40062373.31        1.76        1.34
+  -> cjson (best: cjson-dom) is 2.63x GB/s, 1.35x cyc/op vs best competitor (yyjson) -- 1.50 vs 0.57 GB/s
+
+   8593351   extract-dom/tree              rapidjson                       0.24     98982867.38    267857857.06        2.71        0.45
+   8593351   extract-dom/tree              boost.json                      0.24    122414239.25    269076882.44        2.20        1.09
+   8593351   extract-dom/tree              nlohmann                        0.07    422313783.25    810884109.00        1.92        0.75
+
+   8593351   serialize/index               cjson                           1.05     12390727.38     23675855.94        1.91        2.40
+   8593351   serialize/index               cjson-reuse                     2.34     11137626.75     23672124.69        2.13        2.22
+   8593351   serialize/index               yyjson                          0.67     15808567.31     23070048.63        1.46        3.09
+  -> cjson (best: cjson-reuse) is 3.49x GB/s, 1.42x cyc/op vs best competitor (yyjson) -- 2.34 vs 0.67 GB/s
+
+   8593351   serialize/tree                rapidjson                       0.34     89135889.81    181619263.25        2.04        0.61
+   8593351   serialize/tree                glz::generic                    0.92     29108658.13     42709122.19        1.47        2.53
+   8593351   serialize/tree                boost.json                      0.95     31700750.69     69361470.94        2.19        1.56
+   8593351   serialize/tree                nlohmann(alloc)                 0.15    162071428.88    314417428.69        1.94        1.60
+

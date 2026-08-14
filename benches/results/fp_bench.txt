@@ -1,0 +1,52 @@
+# fp_bench  2026-08-07  host: AMD Ryzen 7 3700U with Radeon Vega Mobile Gfx  kernel 7.1.5-201.fc44.x86_64
+# tree: abad9b5 (+32 dirty files)  build: duck/vsbuild --perf --fp --no-ssp --no-lto (vs TUs: -Ofast)
+
+   size(B)   op                            impl                            GB/s          cyc/op          ins/op         IPC      bmiss%
+---------------------------------------------------------------------------------------------------------------------------------------
+    631659   fold(sum retweet_count)       cjson-handloop                  0.03        11400.06        32530.03        2.85        0.38
+    631659   fold(sum retweet_count)       cjson-fp                        0.03        10605.94        32530.03        3.07        0.40
+
+    631659   filter+fold(favorited)        cjson-handloop                  0.03        12459.37        35933.03        2.88        0.35
+    631659   filter+fold(favorited)        cjson-fp                        0.03        12613.86        36232.03        2.87        0.33
+
+    631659   count_if(truncated)           cjson-handloop                  0.09         4188.69        12615.03        3.01        0.03
+    631659   count_if(truncated)           cjson-fp                        0.08         4298.65        13016.03        3.03        0.03
+
+    631659   max_by(retweet_count)         cjson-handloop                  0.03        10873.41        32630.03        3.00        0.37
+    631659   max_by(retweet_count)         cjson-fp                        0.03        10747.82        32861.03        3.06        0.36
+
+    631659   members(keylen sum)           cjson-handloop                  0.61           75.22          249.02        3.31        0.02
+    631659   members(keylen sum)           cjson-fp                        0.62           75.25          248.02        3.30        0.02
+
+    631659   ondemand walk(sum rt)         cjson-items                     0.00      1162693.60      2653439.41        2.28        1.25
+    631659   ondemand walk(sum rt)         cjson-at-indexed                0.00     21258165.34     45888802.50        2.16        1.82
+    631659   ondemand walk(sum rt)         cjson-fp                        0.00      1127237.78      2625353.42        2.33        1.26
+
+
+## perf stat (bin/fp_bench )
+ Performance counter stats for 'bin/fp_bench':
+
+   328,726,987,381      cycles:u                                                                (12.52%)
+   718,498,023,488      instructions:u                                                          (12.51%)
+   217,816,257,315      branches:u                                                              (12.52%)
+     3,840,516,773      branch-misses:u                                                         (12.52%)
+    19,145,145,462      cache-references:u                                                      (12.52%)
+       264,018,342      cache-misses:u                                                          (12.52%)
+    10,912,761,121      L1-dcache-load-misses:u                                                 (12.52%)
+         2,271,958      dTLB-load-misses:u                                                      (12.52%)
+               825      page-faults:u                                                         
+
+      95.717266892 seconds time elapsed
+
+      94.501638000 seconds user
+       0.013809000 seconds sys
+
+
+
+## hotspots (flat self%, --call-graph fp, -F 997)
+    89.95%  [.] mb::sample mb::measure_once<main::{lambda()#12}&>(main::{lambda()#12}&, unsigned long)                                                                         -      -            
+            ---0x7ffc14a6ebb0
+     3.27%  [.] mb::sample mb::measure_once<main::{lambda()#13}&>(main::{lambda()#13}&, unsigned long)                                                                         -      -            
+     3.20%  [.] mb::sample mb::measure_once<main::{lambda()#11}&>(main::{lambda()#11}&, unsigned long)                                                                         -      -            
+             --1.30%--0x203a227365737574
+     3.11%  [.] cjson::cur::skip(long&) const                                                                                                                                  -      -            

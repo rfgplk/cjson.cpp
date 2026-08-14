@@ -1,0 +1,133 @@
+# lazy_vs — N fields resolved from ONE document handle, N = 1..64.
+#
+# host    AMD Ryzen 7 3700U · kernel 7.1.7-200.fc44.x86_64 · g++ (GCC) 16.1.1 20260515
+# run     taskset -c 0 · medians of 7 · cycles:u / instructions:u (user space only)
+#         cyc/op is the ranking column here; GB/s is a scan rate denominated in the
+#         bytes each contender actually reads, so it ranks the opposite way.
+#
+#   glaze      8.0.0    2f6f5dc   (glz::lazy_json and glz::get_view_json)
+#   simdjson            8c06c44
+#   yyjson              9365ddc
+#
+# regenerate: scripts/vsbuild benches/lazy_vs.cpp && taskset -c 0 ./bin/lazy_vs
+#
+   size(B)   op                            impl                            GB/s          cyc/op          ins/op         IPC      bmiss%
+---------------------------------------------------------------------------------------------------------------------------------------
+### twitter  (631659 B)
+    N fields resolved from ONE document handle.
+    head   = all 4 fields of each of ceil(N/4) adjacent records at the front
+    spread = 1 field from each of N records strided across all 100 statuses
+    cyc/op is the ranking column — GB/s here is a per-contender SCAN RATE, since
+    the lazy walks and the indexers do not read the same bytes.
+    631659   n1-head                       cjson-ondemand                  3.37       638851.81      1526663.13        2.39        3.95
+    631659   n1-head                       cjson-cursor                    3.43       647986.59      1531392.13        2.36        3.95
+    631659   n1-head                       glaze-lazyjson                  0.85          844.29         2374.00        2.81        0.20
+    631659   n1-head                       glaze-getview                   0.61         1208.03         2783.00        2.30        0.00
+    631659   n1-head                       simdjson-ondemand               4.36       497968.38      1233167.06        2.48        4.31
+    631659   n1-head                       yyjson                          0.56      1609590.09      2626749.09        1.63        1.36
+  -> cjson (best: cjson-cursor) is 0.79x GB/s, 0.77x cyc/op vs best competitor (simdjson-ondemand) -- 3.43 vs 4.36 GB/s
+
+    631659   n2-head                       cjson-ondemand                  3.48       638055.66      1529434.16        2.40        3.97
+    631659   n2-head                       cjson-cursor                    3.44       635461.84      1533226.09        2.41        3.94
+    631659   n2-head                       glaze-lazyjson                  1.45         3417.03         8399.01        2.46        0.59
+    631659   n2-head                       glaze-getview                   1.01         5095.73        11696.01        2.30        0.46
+    631659   n2-head                       simdjson-ondemand               4.41       499968.50      1235305.09        2.47        4.28
+    631659   n2-head                       yyjson                          0.57      1604862.69      2627632.50        1.64        1.37
+  -> cjson (best: cjson-ondemand) is 0.79x GB/s, 0.78x cyc/op vs best competitor (simdjson-ondemand) -- 3.48 vs 4.41 GB/s
+
+    631659   n4-head                       cjson-ondemand                  3.45       637629.53      1539096.13        2.41        3.90
+    631659   n4-head                       cjson-cursor                    3.56       638104.16      1541356.09        2.42        3.87
+    631659   n4-head                       glaze-lazyjson                  1.01        10291.97        24879.02        2.42        0.82
+    631659   n4-head                       glaze-getview                   0.56        19148.41        46295.03        2.42        0.56
+    631659   n4-head                       simdjson-ondemand               4.35       500694.16      1243502.09        2.48        4.13
+    631659   n4-head                       yyjson                          0.56      1619915.50      2629107.78        1.62        1.36
+  -> cjson (best: cjson-cursor) is 0.82x GB/s, 0.78x cyc/op vs best competitor (simdjson-ondemand) -- 3.56 vs 4.35 GB/s
+
+    631659   n8-head                       cjson-ondemand                  3.41       671869.88      1589289.13        2.37        3.67
+    631659   n8-head                       cjson-cursor                    3.36       669119.44      1582735.13        2.37        3.69
+    631659   n8-head                       glaze-lazyjson                  0.72        58465.77       126824.11        2.17        1.34
+    631659   n8-head                       glaze-getview                   0.40       107305.34       235944.12        2.20        1.39
+    631659   n8-head                       simdjson-ondemand               4.30       520253.22      1289036.06        2.48        3.59
+    631659   n8-head                       yyjson                          0.51      1628810.53      2631844.56        1.62        1.36
+  -> cjson (best: cjson-ondemand) is 0.79x GB/s, 0.77x cyc/op vs best competitor (simdjson-ondemand) -- 3.41 vs 4.30 GB/s
+
+    631659   n16-head                      cjson-ondemand                  2.82       790653.25      1813094.19        2.29        2.98
+    631659   n16-head                      cjson-cursor                    3.27       692594.25      1633028.16        2.36        3.42
+    631659   n16-head                      glaze-lazyjson                  0.37       226175.16       482433.27        2.13        1.43
+    631659   n16-head                      glaze-getview                   0.17       526904.93      1113817.37        2.11        1.88
+    631659   n16-head                      simdjson-ondemand               3.67       604146.63      1495409.13        2.48        2.32
+    631659   n16-head                      yyjson                          0.53      1626762.50      2637586.66        1.62        1.37
+  -> cjson (best: cjson-cursor) is 0.89x GB/s, 0.87x cyc/op vs best competitor (simdjson-ondemand) -- 3.27 vs 3.67 GB/s
+
+    631659   n32-head                      cjson-ondemand                  1.81      1242564.41      2690087.31        2.16        2.40
+    631659   n32-head                      cjson-cursor                    3.01       719909.81      1716360.19        2.38        3.12
+    631659   n32-head                      glaze-lazyjson                  0.19       832214.51      1746199.60        2.10        1.46
+    631659   n32-head                      glaze-getview                   0.07      2182971.50      4568725.16        2.09        1.95
+    631659   n32-head                      simdjson-ondemand               2.45       878453.56      2307929.19        2.63        1.40
+    631659   n32-head                      yyjson                          0.54      1677933.81      2649489.53        1.58        1.39
+  -> cjson (best: cjson-cursor) is 1.23x GB/s, 1.22x cyc/op vs best competitor (simdjson-ondemand) -- 3.01 vs 2.45 GB/s
+
+    631659   n64-head                      cjson-ondemand                  0.71      3001991.78      6039998.97        2.01        2.09
+    631659   n64-head                      cjson-cursor                    2.65       828324.16      1942671.22        2.35        2.60
+    631659   n64-head                      glaze-lazyjson                  0.11      3071359.81      6409886.79        2.09        1.49
+    631659   n64-head                      glaze-getview                   0.04      8480221.88     17688648.02        2.09        2.03
+    631659   n64-head                      simdjson-ondemand               1.19      1837657.97      5412475.56        2.95        1.00
+    631659   n64-head                      yyjson                          0.55      1654880.59      2675575.88        1.62        1.38
+  -> cjson (best: cjson-cursor) is 2.22x GB/s, 2.22x cyc/op vs best competitor (simdjson-ondemand) -- 2.65 vs 1.19 GB/s
+
+    631659   n1-spread                     cjson-ondemand                  3.33       653876.78      1526663.13        2.33        3.95
+    631659   n1-spread                     cjson-cursor                    3.39       640740.91      1531392.13        2.39        3.94
+    631659   n1-spread                     glaze-lazyjson                  0.83          865.25         2374.00        2.74        0.16
+    631659   n1-spread                     glaze-getview                   0.54         1223.65         2783.00        2.27        0.00
+    631659   n1-spread                     simdjson-ondemand               4.25       509008.34      1233167.06        2.42        4.30
+    631659   n1-spread                     yyjson                          0.56      1610830.56      2626842.81        1.63        1.35
+  -> cjson (best: cjson-cursor) is 0.80x GB/s, 0.79x cyc/op vs best competitor (simdjson-ondemand) -- 3.39 vs 4.25 GB/s
+
+    631659   n2-spread                     cjson-ondemand                  2.53       863169.41      1991651.22        2.31        2.56
+    631659   n2-spread                     cjson-cursor                    2.61       826751.41      2001713.22        2.42        2.31
+    631659   n2-spread                     glaze-lazyjson                  1.03      1160786.34      2426662.34        2.09        1.50
+    631659   n2-spread                     glaze-getview                   1.37       851193.09      1817846.19        2.14        1.81
+    631659   n2-spread                     simdjson-ondemand               3.44       632986.44      1663609.13        2.63        1.79
+    631659   n2-spread                     yyjson                          0.57      1625367.09      2628143.69        1.62        1.36
+  -> cjson (best: cjson-cursor) is 0.76x GB/s, 0.77x cyc/op vs best competitor (simdjson-ondemand) -- 2.61 vs 3.44 GB/s
+
+    631659   n4-spread                     cjson-ondemand                  1.69      1320230.38      2922876.38        2.21        2.15
+    631659   n4-spread                     cjson-cursor                    2.35       927758.03      2235775.25        2.41        2.12
+    631659   n4-spread                     glaze-lazyjson                  0.50      3499945.28      7282566.22        2.08        1.50
+    631659   n4-spread                     glaze-getview                   0.66      2593920.09      5453194.81        2.10        1.88
+    631659   n4-spread                     simdjson-ondemand               2.34       909948.03      2525840.25        2.78        1.19
+    631659   n4-spread                     yyjson                          0.57      1611519.72      2630529.88        1.63        1.36
+  -> cjson (best: cjson-cursor) is 1.00x GB/s, 0.98x cyc/op vs best competitor (simdjson-ondemand) -- 2.35 vs 2.34 GB/s
+
+    631659   n8-spread                     cjson-ondemand                  1.03      2175148.53      4632515.66        2.13        1.97
+    631659   n8-spread                     cjson-cursor                    2.24       962168.72      2330516.22        2.42        2.05
+    631659   n8-spread                     glaze-lazyjson                  0.25      7836770.69     16187904.66        2.07        1.50
+    631659   n8-spread                     glaze-getview                   0.33      5761559.44     12125723.88        2.10        1.88
+    631659   n8-spread                     simdjson-ondemand               1.55      1412937.63      4109073.41        2.91        0.96
+    631659   n8-spread                     yyjson                          0.50      1632042.16      2635156.66        1.61        1.36
+  -> cjson (best: cjson-cursor) is 1.45x GB/s, 1.47x cyc/op vs best competitor (simdjson-ondemand) -- 2.24 vs 1.55 GB/s
+
+    631659   n16-spread                    cjson-ondemand                  0.56      3984429.09      8185253.31        2.05        1.88
+    631659   n16-spread                    cjson-cursor                    2.19       996627.13      2415207.25        2.42        2.04
+    631659   n16-spread                    glaze-lazyjson                  0.12     16696418.44     34718977.72        2.08        1.50
+    631659   n16-spread                    glaze-getview                   0.16     12388791.75     25996765.34        2.10        1.87
+    631659   n16-spread                    simdjson-ondemand               0.87      2491137.78      7399400.78        2.97        0.85
+    631659   n16-spread                    yyjson                          0.55      1644579.34      2644183.72        1.61        1.36
+  -> cjson (best: cjson-cursor) is 2.53x GB/s, 2.50x cyc/op vs best competitor (simdjson-ondemand) -- 2.19 vs 0.87 GB/s
+
+    631659   n32-spread                    cjson-ondemand                  0.31      7477595.06     15272301.41        2.04        1.83
+    631659   n32-spread                    cjson-cursor                    2.16      1042148.44      2509725.25        2.41        1.99
+    631659   n32-spread                    glaze-lazyjson                  0.06     34656650.41     71648145.16        2.07        1.50
+    631659   n32-spread                    glaze-getview                   0.08     25630391.59     53656563.00        2.09        1.87
+    631659   n32-spread                    simdjson-ondemand               0.48      4544355.91     13962458.50        3.07        0.79
+    631659   n32-spread                    yyjson                          0.55      1667333.00      2662543.78        1.60        1.36
+  -> cjson (best: cjson-cursor) is 3.94x GB/s, 1.60x cyc/op vs best competitor (yyjson) -- 2.16 vs 0.55 GB/s
+
+    631659   n64-spread                    cjson-ondemand                  0.22     10040694.66     20472062.44        2.04        1.85
+    631659   n64-spread                    cjson-cursor                    2.22      1002284.38      2406658.25        2.40        2.03
+    631659   n64-spread                    glaze-lazyjson                  0.03     47808377.84     99263963.66        2.08        1.51
+    631659   n64-spread                    glaze-getview                   0.04     35399934.22     74036893.88        2.09        1.90
+    631659   n64-spread                    simdjson-ondemand               0.35      6190534.72     18781048.06        3.03        0.80
+    631659   n64-spread                    yyjson                          0.52      1716925.16      2690179.97        1.57        1.38
+  -> cjson (best: cjson-cursor) is 4.23x GB/s, 1.71x cyc/op vs best competitor (yyjson) -- 2.22 vs 0.52 GB/s
+

@@ -74,12 +74,20 @@ sj_dom_parser_free(void *p)
   delete static_cast<simdjson::dom::parser *>(p);
 }
 
-// full dom parse; returns 1 on success. buf needs no padding (realloc path allowed)
+// full dom parse; returns 1 on success.
+//
+// realloc_if_needed = FALSE. Every bench slurp()s into malloc(sz + 64) and zeroes the
+// trailing 64 bytes, which is exactly SIMDJSON_PADDING, so the buffer already satisfies
+// what simdjson asks for. Passing true made dom::parser copy the whole document into its
+// own padded buffer on every rep — a full memcpy per op that the on-demand entry points
+// below never paid, because they build a padded_string_view over the same slack. That is
+// the row the README headline chart is drawn from; it must not carry a copy the harness
+// has already made unnecessary.
 int
 sj_dom_parse(void *p, const char *buf, unsigned long n)
 {
   simdjson::dom::element e;
-  return static_cast<simdjson::dom::parser *>(p)->parse(buf, n, true).get(e) == simdjson::SUCCESS ? 1 : 0;
+  return static_cast<simdjson::dom::parser *>(p)->parse(buf, n, false).get(e) == simdjson::SUCCESS ? 1 : 0;
 }
 
 // generic rfc 6901 extract on the on-demand path — the corpus_vs `extract` row, where
