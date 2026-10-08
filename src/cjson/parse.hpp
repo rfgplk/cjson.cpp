@@ -491,10 +491,10 @@ read_literal(const u8 *p, usize len, usize i, value &out) noexcept
   return fail(error::bad_syntax);
 }
 
-template<bool RawNumbers, bool Bounds>
+template<bool RawNumbers, bool Bounds, bool Fixed = false, bool Located = false>
 constexpr max_t
 build_t(u8 *__restrict pool, usize len, const u32 *__restrict idx, const max_t nidx, opts o, arena &a, usize &consumed,
-        wbounds &wb) noexcept
+        wbounds &wb, source_range *ranges = nullptr, u32 max_depth = depth_limit) noexcept
 {
   constexpr usize none = ~usize(0);
   value *const vs = a.slab;
@@ -517,10 +517,16 @@ build_t(u8 *__restrict pool, usize len, const u32 *__restrict idx, const max_t n
     case fs::value: {
       if ( k >= nidx ) [[unlikely]]
         return fail(error::bad_syntax);
+      if constexpr ( Fixed ) {
+        if ( vi >= a.cap ) return fail(error::oom);
+        if ( depth > max_depth ) return fail(error::depth_exceeded);
+      }
+      if constexpr ( Located ) ranges[vi] = {idx[k], 0};
       const u8 c = pool[idx[k]];
       if ( c == u8('"') ) {
         if ( const max_t r = read_string(pool, len, idx, nidx, k, vs[vi]); r < 0 ) [[unlikely]]
           return r;
+        if constexpr ( Located ) ranges[vi].end = idx[k - 1] + 1;
         if constexpr ( Bounds ) {
           const u64 sl = get_len(vs[vi]);
           wb0 += ((vs[vi].tag & s_mask) == s_noesc ? sl : sl * 6) + 4;
@@ -537,6 +543,7 @@ build_t(u8 *__restrict pool, usize len, const u32 *__restrict idx, const max_t n
         if ( k + 1 < nidx and pool[idx[k + 1]] == (obj ? u8('}') : u8(']')) ) {
           vs[vi].tag = make_tag(obj ? kind::object : kind::array, 0, 0);
           vs[vi].pay.ofs = sizeof(value);
+          if constexpr ( Located ) ranges[vi].end = idx[k + 1] + 1;
           if constexpr ( Bounds ) {
             wb0 += 12;
             wp0 += 3;
@@ -548,8 +555,8 @@ build_t(u8 *__restrict pool, usize len, const u32 *__restrict idx, const max_t n
           s = fs::after;
           break;
         }
-        if constexpr ( depth_limit > 0 ) {
-          if ( ++depth > depth_limit ) [[unlikely]]
+        if constexpr ( Fixed or depth_limit > 0 ) {
+          if ( ++depth > (Fixed ? max_depth : depth_limit) ) [[unlikely]]
             return fail(error::depth_exceeded);
         }
         if ( ci != none ) vs[ci].tag = ((ctn_len + 1) << tag_bit) | (vs[ci].tag & 0xff);      // stash parent count
@@ -580,6 +587,11 @@ build_t(u8 *__restrict pool, usize len, const u32 *__restrict idx, const max_t n
         } else if ( const max_t r = __num::read_number(pool, len, idx[k], vs[vi]); r < 0 ) [[unlikely]] {
           return r;
         }
+        if constexpr ( Located ) {
+          usize end = idx[k];
+          while ( end < len and is_num_char(pool[end]) ) ++end;
+          ranges[vi].end = u32(end);
+        }
         if constexpr ( Bounds ) {
           wb0 += RawNumbers ? u64(get_len(vs[vi])) + 12 : 42;
           wp0 += 3;
@@ -593,6 +605,7 @@ build_t(u8 *__restrict pool, usize len, const u32 *__restrict idx, const max_t n
       }
       if ( const max_t r = read_literal(pool, len, idx[k], vs[vi]); r < 0 ) [[unlikely]]
         return r;
+      if constexpr ( Located ) ranges[vi].end = idx[k] + (c == u8('f') ? 5 : 4);
       if constexpr ( Bounds ) {
         wb0 += 12;
         wp0 += 3;
@@ -628,6 +641,7 @@ build_t(u8 *__restrict pool, usize len, const u32 *__restrict idx, const max_t n
       if ( c == u8(']') or c == u8('}') ) {
         if ( (c == u8(']')) != (ck == kind::array) ) [[unlikely]]
           return fail(error::bad_syntax);
+        if constexpr ( Located ) ranges[ci].end = idx[k] + 1;
         const u64 back = vs[ci].pay.ofs;
         vs[ci].pay.ofs = (vi - ci) * sizeof(value);      // forward sibling offset
         if ( ck == kind::object )
@@ -635,7 +649,7 @@ build_t(u8 *__restrict pool, usize len, const u32 *__restrict idx, const max_t n
         else
           vs[ci].tag = (ctn_len << tag_bit) | u64(kind::array);
         ++k;
-        if constexpr ( depth_limit > 0 ) --depth;
+        if constexpr ( Fixed or depth_limit > 0 ) --depth;
         if constexpr ( Bounds ) {
           --pdepth;
           wp0 += 1;
@@ -655,8 +669,11 @@ build_t(u8 *__restrict pool, usize len, const u32 *__restrict idx, const max_t n
     case fs::key: {
       if ( k >= nidx or pool[idx[k]] != u8('"') ) [[unlikely]]
         return fail(error::bad_syntax);
+      if constexpr ( Fixed ) if ( vi >= a.cap ) return fail(error::oom);
+      if constexpr ( Located ) ranges[vi] = {idx[k], 0};
       if ( const max_t r = read_string(pool, len, idx, nidx, k, vs[vi]); r < 0 ) [[unlikely]]
         return r;
+      if constexpr ( Located ) ranges[vi].end = idx[k - 1] + 1;
       if constexpr ( Bounds ) {
         const u64 sl = get_len(vs[vi]);
         wb0 += ((vs[vi].tag & s_mask) == s_noesc ? sl : sl * 6) + 4;

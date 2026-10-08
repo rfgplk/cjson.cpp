@@ -38,6 +38,7 @@ namespace cjson
 
 class val;
 struct scratch;
+struct fixed_scratch;
 class mut;
 struct member;
 struct arr_iter;
@@ -65,6 +66,7 @@ class doc
   error __merr = error::ok;
   bool __borrowed = false;      // pool and vals belong to a scratch; release() must not free them
 
+  friend constexpr max_t parse_into(doc &, bytes, fixed_scratch, opts, u32) noexcept;
   friend class val;
   friend class mut;
   friend result<doc> parse(bytes, opts, scratch &) noexcept;

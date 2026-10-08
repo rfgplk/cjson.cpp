@@ -55,6 +55,11 @@ inline constexpr u64 s_plain = u64(0) << 3;      // string
 inline constexpr u64 s_noesc = u64(1) << 3;      // string: no escapes
 
 // NOTE: for efficiency stored like this, later marshalled to any in the porcelain layer
+struct source_range {
+  u32 begin = 0;
+  u32 end = 0;
+};
+
 struct value {      // exactly 16 bytes, pod
   u64 tag;
 
