@@ -29,6 +29,10 @@ constexpr bool constant_contract()
   const u8 text[]{'[', '0', ',', '"', 'x', '"', ']'};
   if ( cjson::parse_into(doc, {text, 7}, sc.view()) != 3 ) return false;
   if ( cjson::get_len(*doc.root().at(1).__raw()) != 1 or sc.ranges[0].end != 7 ) return false;
+  u8 copied[12]{};
+  cjson::fixed_writer<2> writer({copied, 12});
+  writer.array(); writer.copy(doc.root()); writer.integer(-1); writer.end();
+  if ( writer.finish() != 12 or copied[9] != '-' or copied[10] != '1' ) return false;
   u8 out[4]{}; const u8 newline[]{10};
   return cjson::quote_into({newline, 1}, {out, 4}) == 4 and out[1] == '\\' and out[2] == 'n';
 }
@@ -126,6 +130,32 @@ main()
   {
     u8 output[32]; cjson::fixed_writer<1> writer({output, 32});
     writer.array(); writer.array(); sb::require_true(writer.finish() == cjson::fail(cjson::error::depth_exceeded));
+  }
+  sb::end_test_case();
+  sb::test_case("subtree copy bounds nested depth and output while preserving raw numbers and signed extremes");
+  const char *copy_input = R"({"a":[-1.20e+02,"\u0000",true,null,{}]})";
+  sb::require_true(cjson::parse_into(doc, as_bytes(copy_input), sc.view(), opts) > 0);
+  const char *copy_expected = R"([{"a":[-1.20e+02,"\u0000",true,null,{}]},-9223372036854775808,9223372036854775807])";
+  for ( usize cap = 0; cap < 128; ++cap ) {
+    u8 bytes[129]; for ( auto &b : bytes ) b = 0xa5;
+    cjson::fixed_writer<4> writer({bytes, cap});
+    writer.array(); writer.copy(doc.root()); writer.integer(-9223372036854775807ll - 1);
+    writer.integer(9223372036854775807ll); writer.end();
+    const auto n = writer.finish();
+    if ( cap < micron::strlen(copy_expected) ) sb::require_true(n < 0);
+    else sb::require_true(n == max_t(micron::strlen(copy_expected))
+        && micron::memcmp<u8>(bytes, reinterpret_cast<const u8 *>(copy_expected), usize(n)) == 0);
+    for ( usize i = cap; i < 129; ++i ) sb::require_true(bytes[i] == 0xa5);
+  }
+  {
+    u8 bytes[128]; cjson::fixed_writer<3> writer({bytes, 128});
+    writer.array(); writer.copy(doc.root()); writer.end();
+    sb::require_true(writer.finish() == cjson::fail(cjson::error::depth_exceeded));
+  }
+  {
+    u8 bytes[128]; cjson::fixed_writer<3> writer({bytes, 128});
+    writer.copy({}); writer.null();
+    sb::require_true(writer.finish() == cjson::fail(cjson::error::bad_syntax));
   }
   sb::end_test_case();
   return 1;

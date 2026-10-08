@@ -180,6 +180,51 @@ public:
     for ( usize i = 0; i < n; ++i ) __out.ptr[__size++] = digits[i];
     return error::ok;
   }
+  constexpr error integer(i64 value) noexcept
+  {
+    u8 digits[21]; const usize n = usize(__itoa::write_i64(digits, value) - digits);
+    if ( __prefix(n) != error::ok ) return __error;
+    for ( usize i = 0; i < n; ++i ) __out.ptr[__size++] = digits[i];
+    return error::ok;
+  }
+  // Copy a valid DOM subtree while enforcing the destination's remaining depth
+  // and byte limits. Raw values retain their validated spelling. Like write_into,
+  // the caller must supply a live, valid document (including any builder raw values).
+  constexpr error copy(val source) noexcept
+  {
+    if ( __error != error::ok ) return __error;
+    if ( !source or !source.__owner() ) return __fail(error::bad_syntax);
+    const auto *v = source.__raw(); const auto *pool = source.__owner()->pool();
+    switch ( get_kind(*v) ) {
+    case kind::object: case kind::array: {
+      const bool object = get_kind(*v) == kind::object;
+      if ( __container(object) != error::ok ) return __error;
+      const auto *end = get_next(v);
+      for ( auto *child = v + 1; child != end; child = get_next(child) ) {
+        if ( object ) {
+          if ( key({pool + child->pay.ofs, usize(get_len(*child))}) != error::ok ) return __error;
+          ++child;
+        }
+        if ( copy(val{source.__owner(), child}) != error::ok ) return __error;
+      }
+      return this->end();
+    }
+    case kind::string: return string({pool + v->pay.ofs, usize(get_len(*v))});
+    case kind::raw: {
+      const usize n = get_len(*v);
+      if ( __prefix(n) != error::ok ) return __error;
+      for ( usize i = 0; i < n; ++i ) __out.ptr[__size++] = pool[v->pay.ofs + i];
+      return error::ok;
+    }
+    case kind::number: case kind::boolean: case kind::null: {
+      u8 scalar[64]; const usize n = usize(__write::write_scalar(scalar, *v, pool) - scalar);
+      if ( __prefix(n) != error::ok ) return __error;
+      for ( usize i = 0; i < n; ++i ) __out.ptr[__size++] = scalar[i];
+      return error::ok;
+    }
+    default: return __fail(error::bad_syntax);
+    }
+  }
   constexpr error boolean(bool value) noexcept { return value ? __literal("true", 4) : __literal("false", 5); }
   constexpr error null() noexcept { return __literal("null", 4); }
   constexpr max_t finish() const noexcept
