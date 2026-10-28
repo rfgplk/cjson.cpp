@@ -65,9 +65,9 @@ classify_arm64(const u8 *p) noexcept
   const v128u8 f0 = cls(in0), f1 = cls(in1), f2 = cls(in2), f3 = cls(in3);
 
   block_masks m{};
-  // vtstq: nonzero-AND test to a lane mask (no micron alias)
-  m.ws = __mm64_neon(vtstq_u8(f0, m_ws), vtstq_u8(f1, m_ws), vtstq_u8(f2, m_ws), vtstq_u8(f3, m_ws));
-  m.op = __mm64_neon(vtstq_u8(f0, m_op), vtstq_u8(f1, m_op), vtstq_u8(f2, m_op), vtstq_u8(f3, m_op));
+  const auto test = [](v128u8 value, v128u8 mask) { return __ne::not_(__ne::eq(__ne::and_(value, mask), __ne::dup_u8(0))); };
+  m.ws = __mm64_neon(test(f0, m_ws), test(f1, m_ws), test(f2, m_ws), test(f3, m_ws));
+  m.op = __mm64_neon(test(f0, m_op), test(f1, m_op), test(f2, m_op), test(f3, m_op));
 
   const v128u8 q = __ne::dup_u8('"'), b = __ne::dup_u8('\\'), x1f = __ne::dup_u8(0x1f);
   m.quote = __mm64_neon(__ne::eq(in0, q), __ne::eq(in1, q), __ne::eq(in2, q), __ne::eq(in3, q));

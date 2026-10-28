@@ -346,6 +346,17 @@ gen_pow5_neg() noexcept
   return c;
 }
 
+template<i32 First, u32 A, i32 Second, u32 B>
+consteval pow5_chunk<First, A + B>
+join_pow5_neg(const pow5_chunk<First, A> &a, const pow5_chunk<Second, B> &b) noexcept
+{
+  static_assert(Second == First - i32(A));
+  pow5_chunk<First, A + B> result{};
+  for ( u32 i = 0; i < A; ++i ) result.v[i] = a.v[i];
+  for ( u32 i = 0; i < B; ++i ) result.v[A + i] = b.v[i];
+  return result;
+}
+
 consteval pow5_chunk<0, 325>
 gen_pow5_pos() noexcept
 {
@@ -368,9 +379,16 @@ inline constexpr auto pow5_n2 = __tables::gen_pow5_neg<-44, 43>();
 inline constexpr auto pow5_n3 = __tables::gen_pow5_neg<-87, 43>();
 inline constexpr auto pow5_n4 = __tables::gen_pow5_neg<-130, 43>();
 inline constexpr auto pow5_n5 = __tables::gen_pow5_neg<-173, 43>();
-inline constexpr auto pow5_n6 = __tables::gen_pow5_neg<-216, 43>();
-inline constexpr auto pow5_n7 = __tables::gen_pow5_neg<-259, 43>();
-inline constexpr auto pow5_n8 = __tables::gen_pow5_neg<-302, 41>();      // q in [-342, -302]
+// Keep each long-division evaluation within Clang's default constexpr step budget.
+inline constexpr auto pow5_n6_a = __tables::gen_pow5_neg<-216, 22>();
+inline constexpr auto pow5_n6_b = __tables::gen_pow5_neg<-238, 21>();
+inline constexpr auto pow5_n7_a = __tables::gen_pow5_neg<-259, 22>();
+inline constexpr auto pow5_n7_b = __tables::gen_pow5_neg<-281, 21>();
+inline constexpr auto pow5_n8_a = __tables::gen_pow5_neg<-302, 21>();
+inline constexpr auto pow5_n8_b = __tables::gen_pow5_neg<-323, 20>();
+inline constexpr auto pow5_n6 = __tables::join_pow5_neg(pow5_n6_a, pow5_n6_b);
+inline constexpr auto pow5_n7 = __tables::join_pow5_neg(pow5_n7_a, pow5_n7_b);
+inline constexpr auto pow5_n8 = __tables::join_pow5_neg(pow5_n8_a, pow5_n8_b);      // q in [-342, -302]
 
 constexpr u128_parts
 pow5(i32 q) noexcept
