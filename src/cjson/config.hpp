@@ -40,7 +40,7 @@
 
 namespace cjson
 {
-class value;
+struct value;
 class doc;
 
 using bytes = micron::raw_slice<const u8>;       // borrowed input view; never mutated or padded
